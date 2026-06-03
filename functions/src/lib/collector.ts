@@ -34,8 +34,14 @@ export interface CollectResult {
   hasCodeforcesHandle?: boolean;
   /** Most recent AC per configured platform (manual check debug only). */
   latestSeenByPlatform?: LatestSeen[];
+  /** Last ingest error this run (manual debugging). */
+  lastIngestError?: string;
   /** Set on manual checks — full per-user debug text. */
   debugMessage?: string;
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export interface CollectOptions {
@@ -172,6 +178,10 @@ export function formatUserCheckDebug(r: CollectResult): string {
     lines.push("  Latest AC: none found from APIs.");
   }
 
+  if (r.lastIngestError) {
+    lines.push(`  ⚠️ Ingest error: ${r.lastIngestError}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -191,7 +201,11 @@ export function formatGroupCheckDebug(
 export async function collectForUser(
   user: User,
   options?: CollectOptions
-): Promise<{ ingested: number; latestSeenByPlatform?: LatestSeen[] }> {
+): Promise<{
+  ingested: number;
+  latestSeenByPlatform?: LatestSeen[];
+  lastIngestError?: string;
+}> {
   if (!user.groupId) return { ingested: 0 };
 
   const tz = await getGroupTimezone(user.groupId);
@@ -199,6 +213,7 @@ export async function collectForUser(
   const cfSince = Math.max(user.lastProcessedTimestamp ?? 0, sixtyDaysAgo);
   let ingested = 0;
   let maxNewTs = 0;
+  let lastIngestError: string | undefined;
 
   if (user.codeforcesHandle?.trim()) {
     try {
@@ -207,33 +222,42 @@ export async function collectForUser(
         cfSince
       );
       for (const s of subs) {
-        const added = await ingestSubmission(
-          user,
-          {
+        try {
+          const added = await ingestSubmission(
+            user,
+            {
+              platform: "codeforces",
+              problemId: s.problemId,
+              problemName: s.problemName,
+              timestampSeconds: s.timestamp,
+            },
+            tz
+          );
+          if (added) {
+            ingested++;
+            maxNewTs = Math.max(maxNewTs, s.timestamp);
+          }
+        } catch (err) {
+          lastIngestError = `codeforces/${s.problemId}: ${errMessage(err)}`;
+          logger.error("Ingest failed", {
+            userId: user.id,
             platform: "codeforces",
             problemId: s.problemId,
-            problemName: s.problemName,
-            timestampSeconds: s.timestamp,
-          },
-          tz
-        );
-        if (added) {
-          ingested++;
-          maxNewTs = Math.max(maxNewTs, s.timestamp);
+            error: lastIngestError,
+          });
         }
       }
     } catch (err) {
+      lastIngestError = `codeforces API: ${errMessage(err)}`;
       logger.error("Codeforces collect failed", {
         userId: user.id,
         handle: user.codeforcesHandle,
-        err,
+        error: lastIngestError,
       });
     }
   }
 
   // LeetCode: always scan recent AC list; dedupe via Firestore doc id only.
-  // Do not filter by lastProcessedTimestamp — it was advancing without ingests
-  // and caused fresh submissions to be skipped.
   if (user.leetcodeUsername?.trim()) {
     try {
       const subs = await fetchRecentAccepted(
@@ -242,26 +266,37 @@ export async function collectForUser(
         50
       );
       for (const s of subs) {
-        const added = await ingestSubmission(
-          user,
-          {
+        try {
+          const added = await ingestSubmission(
+            user,
+            {
+              platform: "leetcode",
+              problemId: s.problemId,
+              problemName: s.problemName,
+              timestampSeconds: s.timestamp,
+            },
+            tz
+          );
+          if (added) {
+            ingested++;
+            maxNewTs = Math.max(maxNewTs, s.timestamp);
+          }
+        } catch (err) {
+          lastIngestError = `leetcode/${s.problemId}: ${errMessage(err)}`;
+          logger.error("Ingest failed", {
+            userId: user.id,
             platform: "leetcode",
             problemId: s.problemId,
-            problemName: s.problemName,
-            timestampSeconds: s.timestamp,
-          },
-          tz
-        );
-        if (added) {
-          ingested++;
-          maxNewTs = Math.max(maxNewTs, s.timestamp);
+            error: lastIngestError,
+          });
         }
       }
     } catch (err) {
+      lastIngestError = `leetcode API: ${errMessage(err)}`;
       logger.error("LeetCode collect failed", {
         userId: user.id,
         username: user.leetcodeUsername,
-        err,
+        error: lastIngestError,
       });
     }
   }
@@ -274,7 +309,7 @@ export async function collectForUser(
     ? await resolveLatestSeenPerPlatform(user, tz)
     : undefined;
 
-  return { ingested, latestSeenByPlatform };
+  return { ingested, latestSeenByPlatform, lastIngestError };
 }
 
 export async function collectForUsers(
@@ -301,10 +336,8 @@ export async function collectForUsers(
       continue;
     }
 
-    const { ingested, latestSeenByPlatform } = await collectForUser(
-      user,
-      options
-    );
+    const { ingested, latestSeenByPlatform, lastIngestError } =
+      await collectForUser(user, options);
     const row: CollectResult = {
       userId: user.id,
       displayName: user.displayName,
@@ -313,6 +346,7 @@ export async function collectForUsers(
       hasLeetcodeHandle: Boolean(user.leetcodeUsername?.trim()),
       hasCodeforcesHandle: Boolean(user.codeforcesHandle?.trim()),
       latestSeenByPlatform,
+      lastIngestError,
     };
     if (debug) row.debugMessage = formatUserCheckDebug(row);
     results.push(row);

@@ -55,15 +55,16 @@ export async function ingestSubmission(
   const ts = Timestamp.fromMillis(event.timestampSeconds * 1000);
   const date = localDateString(new Date(event.timestampSeconds * 1000), timeZone);
 
+  // Firestore rejects undefined field values — omit optional fields.
   const submission: Submission = {
     id: docId,
     userId: user.id,
     groupId: user.groupId,
     platform: event.platform,
     problemId: event.problemId,
-    problemName: event.problemName,
     timestamp: ts,
     uniqueKey: uk,
+    ...(event.problemName ? { problemName: event.problemName } : {}),
   };
 
   const dsRef = db
