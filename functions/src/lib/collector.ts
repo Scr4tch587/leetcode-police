@@ -30,11 +30,16 @@ export interface CollectResult {
   ingested: number;
   skipped: boolean;
   skipReason?: string;
-  latestSeen?: LatestSeen;
+  hasLeetcodeHandle?: boolean;
+  hasCodeforcesHandle?: boolean;
+  /** Most recent AC per configured platform (manual check debug only). */
+  latestSeenByPlatform?: LatestSeen[];
+  /** Set on manual checks — full per-user debug text. */
+  debugMessage?: string;
 }
 
 export interface CollectOptions {
-  /** Attach most recent AC from APIs (for admin debug messages). */
+  /** Peek latest AC per platform; build debugMessage (manual admin checks only). */
   includeLatestSeen?: boolean;
 }
 
@@ -43,11 +48,12 @@ async function getGroupTimezone(groupId: string): Promise<string> {
   return (snap.data() as Group | undefined)?.timezone ?? DEFAULT_TIMEZONE.value();
 }
 
-async function resolveLatestSeen(
+/** Latest accepted submission per platform that has a handle configured. */
+async function resolveLatestSeenPerPlatform(
   user: User,
   timeZone: string
-): Promise<LatestSeen | undefined> {
-  const candidates: LatestSeen[] = [];
+): Promise<LatestSeen[]> {
+  const out: LatestSeen[] = [];
 
   if (user.codeforcesHandle?.trim()) {
     try {
@@ -58,7 +64,7 @@ async function resolveLatestSeen(
           "codeforces",
           latest.problemId
         );
-        candidates.push({
+        out.push({
           platform: "codeforces",
           problemId: latest.problemId,
           problemName: latest.problemName,
@@ -92,7 +98,7 @@ async function resolveLatestSeen(
           "leetcode",
           latest.problemId
         );
-        candidates.push({
+        out.push({
           platform: "leetcode",
           problemId: latest.problemId,
           problemName: latest.problemName,
@@ -112,17 +118,78 @@ async function resolveLatestSeen(
     }
   }
 
-  if (candidates.length === 0) return undefined;
-  return candidates.reduce((a, b) =>
-    a.timestampSeconds >= b.timestampSeconds ? a : b
+  return out.sort((a, b) => a.platform.localeCompare(b.platform));
+}
+
+function formatOneLatest(ls: LatestSeen): string {
+  const when = new Date(ls.timestampSeconds * 1000).toISOString();
+  const label = ls.problemName
+    ? `${ls.problemId} (${ls.problemName})`
+    : ls.problemId;
+  const status = ls.alreadyInDb ? "already recorded" : "not in DB yet";
+  return (
+    `${ls.platform}: ${label} on ${ls.localDate} (${when}, ${status})`
   );
+}
+
+/** Per-user debug block for manual admin checks. */
+export function formatUserCheckDebug(r: CollectResult): string {
+  const lines: string[] = [];
+
+  if (r.skipped) {
+    lines.push(`${r.displayName}: skipped — ${r.skipReason ?? "unknown"}.`);
+    lines.push("  Latest AC: n/a (no platform handles).");
+    return lines.join("\n");
+  }
+
+  lines.push(
+    `${r.displayName}: ${r.ingested} new submission(s) ingested.`
+  );
+
+  const seenLc = Boolean(
+    r.latestSeenByPlatform?.some((x) => x.platform === "leetcode")
+  );
+  const seenCf = Boolean(
+    r.latestSeenByPlatform?.some((x) => x.platform === "codeforces")
+  );
+
+  if (r.latestSeenByPlatform?.length) {
+    for (const ls of r.latestSeenByPlatform) {
+      lines.push(`  ${formatOneLatest(ls)}`);
+    }
+  }
+
+  if (r.hasLeetcodeHandle && !seenLc) {
+    lines.push("  leetcode: no accepted submissions found");
+  }
+  if (r.hasCodeforcesHandle && !seenCf) {
+    lines.push("  codeforces: no accepted submissions found");
+  }
+
+  if (!r.hasLeetcodeHandle && !r.hasCodeforcesHandle) {
+    lines.push("  Latest AC: none found from APIs.");
+  }
+
+  return lines.join("\n");
+}
+
+/** Full manual group-check message — one block per member. */
+export function formatGroupCheckDebug(
+  results: CollectResult[],
+  totalIngested: number
+): string {
+  return [
+    `Manual check — ${totalIngested} new submission(s) ingested across ${results.length} member(s).`,
+    "",
+    ...results.map((r) => r.debugMessage ?? formatUserCheckDebug(r)),
+  ].join("\n");
 }
 
 /** Poll Codeforces + LeetCode for one user. */
 export async function collectForUser(
   user: User,
   options?: CollectOptions
-): Promise<{ ingested: number; latestSeen?: LatestSeen }> {
+): Promise<{ ingested: number; latestSeenByPlatform?: LatestSeen[] }> {
   if (!user.groupId) return { ingested: 0 };
 
   const tz = await getGroupTimezone(user.groupId);
@@ -193,11 +260,11 @@ export async function collectForUser(
     await updateLastProcessed(user.id, maxTs);
   }
 
-  const latestSeen = options?.includeLatestSeen
-    ? await resolveLatestSeen(user, tz)
+  const latestSeenByPlatform = options?.includeLatestSeen
+    ? await resolveLatestSeenPerPlatform(user, tz)
     : undefined;
 
-  return { ingested, latestSeen };
+  return { ingested, latestSeenByPlatform };
 }
 
 export async function collectForUsers(
@@ -205,42 +272,41 @@ export async function collectForUsers(
   options?: CollectOptions
 ): Promise<CollectResult[]> {
   const results: CollectResult[] = [];
+  const debug = options?.includeLatestSeen === true;
 
   for (const user of users) {
     if (!user.leetcodeUsername?.trim() && !user.codeforcesHandle?.trim()) {
-      results.push({
+      const row: CollectResult = {
         userId: user.id,
         displayName: user.displayName,
         ingested: 0,
         skipped: true,
         skipReason: "No LeetCode username or Codeforces handle",
-      });
+        hasLeetcodeHandle: false,
+        hasCodeforcesHandle: false,
+        latestSeenByPlatform: debug ? [] : undefined,
+      };
+      if (debug) row.debugMessage = formatUserCheckDebug(row);
+      results.push(row);
       continue;
     }
 
-    const { ingested, latestSeen } = await collectForUser(user, options);
-    results.push({
+    const { ingested, latestSeenByPlatform } = await collectForUser(
+      user,
+      options
+    );
+    const row: CollectResult = {
       userId: user.id,
       displayName: user.displayName,
       ingested,
       skipped: false,
-      latestSeen,
-    });
+      hasLeetcodeHandle: Boolean(user.leetcodeUsername?.trim()),
+      hasCodeforcesHandle: Boolean(user.codeforcesHandle?.trim()),
+      latestSeenByPlatform,
+    };
+    if (debug) row.debugMessage = formatUserCheckDebug(row);
+    results.push(row);
   }
 
   return results;
-}
-
-/** Human-readable debug line for admin UI messages. */
-export function formatLatestSeen(latest?: LatestSeen): string {
-  if (!latest) return "Latest AC: none found from APIs.";
-  const when = new Date(latest.timestampSeconds * 1000).toISOString();
-  const label = latest.problemName
-    ? `${latest.problemId} (${latest.problemName})`
-    : latest.problemId;
-  const status = latest.alreadyInDb ? "already recorded" : "not in DB yet";
-  return (
-    `Latest AC: ${latest.platform} ${label} on ${latest.localDate} ` +
-    `(${when}, ${status})`
-  );
 }

@@ -7,7 +7,7 @@ import { db } from "../lib/admin";
 import { REGION } from "../config";
 import { Collections, User } from "../types";
 import { requireAdmin } from "../lib/callable";
-import { collectForUsers } from "../lib/collector";
+import { collectForUsers, formatGroupCheckDebug } from "../lib/collector";
 
 const opts = { region: REGION };
 const collectOpts = { ...opts, memory: "512MiB" as const, timeoutSeconds: 120 };
@@ -43,7 +43,12 @@ export const runSubmissionCheck = onCall(collectOpts, async (req) => {
     members: results.length,
   });
 
-  return { ok: true, ingested, results };
+  return {
+    ok: true,
+    ingested,
+    message: formatGroupCheckDebug(results, ingested),
+    results,
+  };
 });
 
 async function assertSameGroupUser(admin: User, userId: string): Promise<User> {

@@ -3,10 +3,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api";
 import { useGroupMembers } from "../hooks/useGroupData";
 import { Card } from "../components/ui";
-import {
-  formatCheckResult,
-  formatGroupCheckResults,
-} from "../lib/checkMessages";
+import { manualCheckMessage } from "../lib/checkMessages";
 
 export function Admin() {
   const { profile } = useAuth();
@@ -48,7 +45,7 @@ export function Admin() {
             onClick={() =>
               void wrap("check-all", async () => {
                 const res = await api.runSubmissionCheck({});
-                setCheckMsg(formatGroupCheckResults(res.ingested, res.results));
+                setCheckMsg(manualCheckMessage(res));
               })
             }
           >
@@ -136,10 +133,7 @@ export function Admin() {
                         const res = await api.runSubmissionCheck({
                           userId: m.id,
                         });
-                        const r = res.results[0];
-                        if (r) {
-                          setCheckMsg(formatCheckResult(r, res.ingested));
-                        }
+                        setCheckMsg(manualCheckMessage(res));
                       })
                     }
                   >

@@ -41,20 +41,22 @@ export const api = {
     {
       ok: boolean;
       ingested: number;
+      message: string;
       results: Array<{
         userId: string;
         displayName: string;
         ingested: number;
         skipped: boolean;
         skipReason?: string;
-        latestSeen?: {
+        debugMessage?: string;
+        latestSeenByPlatform?: Array<{
           platform: string;
           problemId: string;
           problemName?: string;
           timestampSeconds: number;
           localDate: string;
           alreadyInDb: boolean;
-        };
+        }>;
       }>;
     }
   >("runSubmissionCheck"),
