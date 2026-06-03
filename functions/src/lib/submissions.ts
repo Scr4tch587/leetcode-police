@@ -1,9 +1,10 @@
 /**
  * Idempotent submission ingestion and live daily-status updates.
  */
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
+import { PENALTY_WORDS_PER_MISS } from "./game";
 import {
   Collections,
   DailyStatus,
@@ -37,7 +38,7 @@ export async function submissionExists(
 }
 
 /**
- * Insert a submission if unseen; bump today's daily status for live dashboard.
+ * Insert a submission if unseen; update daily status; bank extras live on 2nd+.
  */
 export async function ingestSubmission(
   user: Pick<User, "id" | "groupId">,
@@ -66,13 +67,39 @@ export async function ingestSubmission(
   const dsRef = db
     .collection(Collections.dailyStatus)
     .doc(dailyStatusId(user.id, date));
+  const userRef = db.collection(Collections.users).doc(user.id);
 
   const ingested = await db.runTransaction(async (tx) => {
-    // Firestore: all reads before any writes.
     const [subSnap, dsSnap] = await Promise.all([tx.get(ref), tx.get(dsRef)]);
     if (subSnap.exists) return false;
 
     const prev = dsSnap.data() as DailyStatus | undefined;
+    const prevCount = prev?.submissionCount ?? 0;
+    const newCount = prevCount + 1;
+    let extrasBanked = prev?.extrasBanked ?? 0;
+
+    const userUpdates: Record<string, unknown> = {};
+
+    // 2nd+ problem on this day → bank one immediately.
+    if (newCount >= 2) {
+      extrasBanked += 1;
+      userUpdates.bankedProblems = FieldValue.increment(1);
+    }
+
+    // Submission arrived after midnight penalized an empty day — undo penalty.
+    if (
+      newCount === 1 &&
+      prev?.resolved &&
+      prev.penaltyApplied &&
+      !prev.solvedToday
+    ) {
+      userUpdates.wordPenalty = FieldValue.increment(-PENALTY_WORDS_PER_MISS);
+    }
+
+    if (Object.keys(userUpdates).length > 0) {
+      tx.update(userRef, userUpdates);
+    }
+
     const next: DailyStatus = {
       id: dsRef.id,
       userId: user.id,
@@ -80,8 +107,12 @@ export async function ingestSubmission(
       date,
       solvedToday: true,
       bankUsed: prev?.bankUsed ?? false,
-      penaltyApplied: prev?.penaltyApplied ?? false,
-      submissionCount: (prev?.submissionCount ?? 0) + 1,
+      penaltyApplied:
+        newCount === 1 && prev?.penaltyApplied && prev?.resolved
+          ? false
+          : (prev?.penaltyApplied ?? false),
+      submissionCount: newCount,
+      extrasBanked,
       resolved: prev?.resolved ?? false,
     };
 

@@ -53,6 +53,8 @@ export interface DailyStatus {
   bankUsed: boolean;
   penaltyApplied: boolean;
   submissionCount: number;
+  /** Extra problems already converted to bank for this day (0..count-1). */
+  extrasBanked?: number;
   /** Set by the midnight job so re-runs are idempotent. */
   resolved: boolean;
 }

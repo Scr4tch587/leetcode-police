@@ -10,6 +10,7 @@ import {
   fetchLatestAccepted,
 } from "../codeforcesClient";
 import { fetchRecentAccepted } from "../leetcodeScraper";
+import { reconcilePendingDays } from "./game";
 import { ingestSubmission, submissionExists, updateLastProcessed } from "./submissions";
 import { localDateString } from "./dates";
 
@@ -303,6 +304,19 @@ export async function collectForUser(
 
   if (ingested > 0 && maxNewTs > 0) {
     await updateLastProcessed(user.id, maxNewTs);
+  }
+
+  // Backfill banking for historical days left unresolved (e.g. ingest after midnight).
+  const reconciled = await reconcilePendingDays(user, tz);
+  if (reconciled.length > 0) {
+    logger.info("Reconciled pending days after collect", {
+      userId: user.id,
+      days: reconciled.map((r) => ({
+        date: r.date,
+        count: r.submissionCount,
+        extrasBanked: r.extrasBanked,
+      })),
+    });
   }
 
   const latestSeenByPlatform = options?.includeLatestSeen

@@ -45,5 +45,6 @@ export interface DailyStatus {
   bankUsed: boolean;
   penaltyApplied: boolean;
   submissionCount: number;
+  extrasBanked?: number;
   resolved?: boolean;
 }

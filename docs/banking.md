@@ -7,7 +7,9 @@ penalty is applied.
 ## Rules
 
 - First valid **new** problem of the day → satisfies the day (`solvedToday`).
-- At midnight, for that day with **N** valid new submissions: `bankedProblems += max(0, N - 1)`.
+- **2nd+ problem on the same day** (on ingest): `bankedProblems += 1` immediately.
+- At midnight (or after sync backfill), any still-unresolved day with **N** submissions:
+  `bankedProblems += max(0, N - 1 - extrasAlreadyBanked)`.
 - At midnight, for a day with **N = 0**:
   - `bankedProblems > 0` → `bankedProblems -= 1`, mark `bankUsed`. No penalty.
   - otherwise → `wordPenalty += 2`, mark `penaltyApplied`.

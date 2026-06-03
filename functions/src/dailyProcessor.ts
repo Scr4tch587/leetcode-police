@@ -31,25 +31,24 @@ async function getGroupTimezone(groupId: string): Promise<string> {
 export const dailyProcessor = onSchedule(
   { ...scheduleOpts, schedule: "5 0 * * *" },
   async () => {
-    const tz = DEFAULT_TIMEZONE.value();
-    const date = addDays(today(tz), -1);
     const users = await getActiveUsers();
 
     const outcomes = await Promise.all(
       users.map(async (u) => {
         const gtz = u.groupId
           ? await getGroupTimezone(u.groupId)
-          : tz;
+          : DEFAULT_TIMEZONE.value();
+        const date = addDays(today(gtz), -1);
         return resolveUserDay(u, date, gtz);
       })
     );
 
     logger.info("Daily processor finished", {
-      date,
       users: users.length,
       solved: outcomes.filter((o) => o.status === "solved").length,
       bankUsed: outcomes.filter((o) => o.status === "bankUsed").length,
       penalty: outcomes.filter((o) => o.status === "penalty").length,
+      skipped: outcomes.filter((o) => o.status === "skipped").length,
     });
   }
 );
