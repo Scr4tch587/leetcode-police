@@ -170,14 +170,81 @@ export async function closeHistoricalDays(
 }
 
 /**
- * Catch up yesterday only if still unresolved (e.g. ingest after midnight).
- * Skips older historical dates — those are closed without banking.
+ * Credit today's extra problems from submissions already in Firestore
+ * (e.g. both solves ingested earlier — no new writes this run).
+ */
+export async function reconcileTodayExtras(
+  user: Pick<User, "id" | "groupId">,
+  timeZone: string
+): Promise<MidnightOutcome | null> {
+  if (!user.groupId) return null;
+
+  const date = today(timeZone);
+  const count = await countSubmissionsForDay(user.id, date, timeZone);
+
+  return db.runTransaction(async (tx) => {
+    const userRef = db.collection(Collections.users).doc(user.id);
+    const dsRef = db
+      .collection(Collections.dailyStatus)
+      .doc(dailyStatusId(user.id, date));
+
+    const dsSnap = await tx.get(dsRef);
+    const prev = dsSnap.data() as DailyStatus | undefined;
+    const alreadyBanked = prev?.extrasBanked ?? 0;
+    const credit = extrasToBank(count, alreadyBanked);
+
+    const next: DailyStatus = {
+      id: dsRef.id,
+      userId: user.id,
+      groupId: user.groupId!,
+      date,
+      solvedToday: count >= 1,
+      bankUsed: prev?.bankUsed ?? false,
+      penaltyApplied: prev?.penaltyApplied ?? false,
+      submissionCount: count,
+      extrasBanked: alreadyBanked + credit,
+      resolved: prev?.resolved ?? false,
+    };
+
+    if (credit > 0) {
+      tx.update(userRef, { bankedProblems: FieldValue.increment(credit) });
+    }
+    tx.set(dsRef, next, { merge: true });
+
+    if (credit > 0) {
+      logger.info("Reconciled today extras from saved submissions", {
+        userId: user.id,
+        date,
+        count,
+        credited: credit,
+      });
+    }
+
+    return credit > 0 || count >= 1
+      ? {
+          userId: user.id,
+          date,
+          status: "reconciled" as const,
+          submissionCount: count,
+          extrasBanked: next.extrasBanked,
+        }
+      : null;
+  });
+}
+
+/**
+ * After sync: close history (no bank), bank today's extras from DB count, catch up yesterday.
  */
 export async function reconcilePendingDays(
   user: Pick<User, "id" | "groupId">,
   timeZone: string
 ): Promise<MidnightOutcome[]> {
-  await closeHistoricalDays(user, timeZone);
+  const outcomes: MidnightOutcome[] = [];
+
+  outcomes.push(...(await closeHistoricalDays(user, timeZone)));
+
+  const todayOutcome = await reconcileTodayExtras(user, timeZone);
+  if (todayOutcome) outcomes.push(todayOutcome);
 
   const yesterday = addDays(today(timeZone), -1);
   const dsRef = db
@@ -185,17 +252,19 @@ export async function reconcilePendingDays(
     .doc(dailyStatusId(user.id, yesterday));
   const ds = (await dsRef.get()).data() as DailyStatus | undefined;
 
-  if (!ds || ds.resolved) return [];
+  if (ds && !ds.resolved) {
+    const count = await countSubmissionsForDay(user.id, yesterday, timeZone);
+    if (count > 0) {
+      const outcome = await resolveUserDay(user, yesterday, timeZone);
+      outcomes.push({ ...outcome, status: "reconciled" });
+      logger.info("Reconciled yesterday", {
+        userId: user.id,
+        date: yesterday,
+        count,
+        extrasBanked: outcome.extrasBanked,
+      });
+    }
+  }
 
-  const count = await countSubmissionsForDay(user.id, yesterday, timeZone);
-  if (count === 0) return [];
-
-  const outcome = await resolveUserDay(user, yesterday, timeZone);
-  logger.info("Reconciled yesterday", {
-    userId: user.id,
-    date: yesterday,
-    count,
-    extrasBanked: outcome.extrasBanked,
-  });
-  return [{ ...outcome, status: "reconciled" }];
+  return outcomes;
 }

@@ -7,7 +7,8 @@ penalty is applied.
 ## Rules
 
 - First valid **new** problem of the day → satisfies the day (`solvedToday`).
-- **2nd+ problem on the same calendar day** (on ingest, **today only**): `bankedProblems += 1`.
+- **2nd+ problem on the same calendar day** (**today only**): `bankedProblems += 1` on ingest,
+  or on the next sync/check if both solves are already saved in Firestore.
 - At **midnight** for **yesterday** with **N** submissions:
   `bankedProblems += max(0, N - 1 - extrasAlreadyBanked)`.
 - **Historical backfill** (older LeetCode dates): recorded for history/grid only — **no banking**.
