@@ -70,3 +70,34 @@ export async function fetchAcceptedSubmissions(
   });
   return out;
 }
+
+/** Most recent accepted submission for a handle (full history scan). */
+export async function fetchLatestAccepted(
+  handle: string
+): Promise<CodeforcesSubmission | null> {
+  const url = `${API_BASE}?handle=${encodeURIComponent(handle)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Codeforces API HTTP ${res.status} for ${handle}`);
+  }
+
+  const body = (await res.json()) as CfResponse;
+  if (body.status !== "OK") {
+    throw new Error(
+      `Codeforces API error for ${handle}: ${body.comment ?? body.status}`
+    );
+  }
+
+  let best: CodeforcesSubmission | null = null;
+  for (const row of body.result ?? []) {
+    if (row.verdict !== "OK") continue;
+    if (!best || row.creationTimeSeconds > best.timestamp) {
+      best = {
+        problemId: problemKey(row.problem),
+        problemName: row.problem.name,
+        timestamp: row.creationTimeSeconds,
+      };
+    }
+  }
+  return best;
+}

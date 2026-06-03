@@ -3,6 +3,10 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api";
 import { useGroupMembers } from "../hooks/useGroupData";
 import { Card } from "../components/ui";
+import {
+  formatCheckResult,
+  formatGroupCheckResults,
+} from "../lib/checkMessages";
 
 export function Admin() {
   const { profile } = useAuth();
@@ -31,7 +35,7 @@ export function Admin() {
     <main className="container">
       <h1>Admin panel</h1>
       {error && <p className="error">{error}</p>}
-      {checkMsg && <p className="success">{checkMsg}</p>}
+      {checkMsg && <pre className="success check-debug">{checkMsg}</pre>}
 
       <Card title="Submission sync">
         <p className="muted small">
@@ -44,9 +48,7 @@ export function Admin() {
             onClick={() =>
               void wrap("check-all", async () => {
                 const res = await api.runSubmissionCheck({});
-                setCheckMsg(
-                  `Group check done — ${res.ingested} new submission(s) ingested.`
-                );
+                setCheckMsg(formatGroupCheckResults(res.ingested, res.results));
               })
             }
           >
@@ -135,14 +137,8 @@ export function Admin() {
                           userId: m.id,
                         });
                         const r = res.results[0];
-                        if (r?.skipped) {
-                          setCheckMsg(
-                            `${r.displayName}: skipped — ${r.skipReason ?? "unknown"}`
-                          );
-                        } else {
-                          setCheckMsg(
-                            `${r?.displayName ?? m.displayName}: ${res.ingested} new submission(s).`
-                          );
+                        if (r) {
+                          setCheckMsg(formatCheckResult(r, res.ingested));
                         }
                       })
                     }

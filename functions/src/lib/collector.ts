@@ -4,10 +4,25 @@
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { DEFAULT_TIMEZONE } from "../config";
-import { Collections, Group, User } from "../types";
-import { fetchAcceptedSubmissions } from "../codeforcesClient";
+import { Collections, Group, Platform, User } from "../types";
+import {
+  fetchAcceptedSubmissions,
+  fetchLatestAccepted,
+} from "../codeforcesClient";
 import { fetchRecentAccepted } from "../leetcodeScraper";
-import { ingestSubmission, updateLastProcessed } from "./submissions";
+import { ingestSubmission, submissionExists, updateLastProcessed } from "./submissions";
+import { localDateString } from "./dates";
+
+export interface LatestSeen {
+  platform: Platform;
+  problemId: string;
+  problemName?: string;
+  timestampSeconds: number;
+  /** YYYY-MM-DD in the group's timezone. */
+  localDate: string;
+  /** Already stored in Firestore (not new this run). */
+  alreadyInDb: boolean;
+}
 
 export interface CollectResult {
   userId: string;
@@ -15,6 +30,12 @@ export interface CollectResult {
   ingested: number;
   skipped: boolean;
   skipReason?: string;
+  latestSeen?: LatestSeen;
+}
+
+export interface CollectOptions {
+  /** Attach most recent AC from APIs (for admin debug messages). */
+  includeLatestSeen?: boolean;
 }
 
 async function getGroupTimezone(groupId: string): Promise<string> {
@@ -22,9 +43,87 @@ async function getGroupTimezone(groupId: string): Promise<string> {
   return (snap.data() as Group | undefined)?.timezone ?? DEFAULT_TIMEZONE.value();
 }
 
-/** Poll Codeforces + LeetCode for one user; return count of newly ingested submissions. */
-export async function collectForUser(user: User): Promise<number> {
-  if (!user.groupId) return 0;
+async function resolveLatestSeen(
+  user: User,
+  timeZone: string
+): Promise<LatestSeen | undefined> {
+  const candidates: LatestSeen[] = [];
+
+  if (user.codeforcesHandle?.trim()) {
+    try {
+      const latest = await fetchLatestAccepted(user.codeforcesHandle.trim());
+      if (latest) {
+        const inDb = await submissionExists(
+          user.id,
+          "codeforces",
+          latest.problemId
+        );
+        candidates.push({
+          platform: "codeforces",
+          problemId: latest.problemId,
+          problemName: latest.problemName,
+          timestampSeconds: latest.timestamp,
+          localDate: localDateString(
+            new Date(latest.timestamp * 1000),
+            timeZone
+          ),
+          alreadyInDb: inDb,
+        });
+      }
+    } catch (err) {
+      logger.error("Codeforces latest-AC peek failed", {
+        userId: user.id,
+        err,
+      });
+    }
+  }
+
+  if (user.leetcodeUsername?.trim()) {
+    try {
+      const subs = await fetchRecentAccepted(
+        user.leetcodeUsername.trim(),
+        0,
+        1
+      );
+      const latest = subs[0];
+      if (latest) {
+        const inDb = await submissionExists(
+          user.id,
+          "leetcode",
+          latest.problemId
+        );
+        candidates.push({
+          platform: "leetcode",
+          problemId: latest.problemId,
+          problemName: latest.problemName,
+          timestampSeconds: latest.timestamp,
+          localDate: localDateString(
+            new Date(latest.timestamp * 1000),
+            timeZone
+          ),
+          alreadyInDb: inDb,
+        });
+      }
+    } catch (err) {
+      logger.error("LeetCode latest-AC peek failed", {
+        userId: user.id,
+        err,
+      });
+    }
+  }
+
+  if (candidates.length === 0) return undefined;
+  return candidates.reduce((a, b) =>
+    a.timestampSeconds >= b.timestampSeconds ? a : b
+  );
+}
+
+/** Poll Codeforces + LeetCode for one user. */
+export async function collectForUser(
+  user: User,
+  options?: CollectOptions
+): Promise<{ ingested: number; latestSeen?: LatestSeen }> {
+  if (!user.groupId) return { ingested: 0 };
 
   const tz = await getGroupTimezone(user.groupId);
   const sixtyDaysAgo = Math.floor(Date.now() / 1000) - 60 * 86400;
@@ -94,10 +193,17 @@ export async function collectForUser(user: User): Promise<number> {
     await updateLastProcessed(user.id, maxTs);
   }
 
-  return ingested;
+  const latestSeen = options?.includeLatestSeen
+    ? await resolveLatestSeen(user, tz)
+    : undefined;
+
+  return { ingested, latestSeen };
 }
 
-export async function collectForUsers(users: User[]): Promise<CollectResult[]> {
+export async function collectForUsers(
+  users: User[],
+  options?: CollectOptions
+): Promise<CollectResult[]> {
   const results: CollectResult[] = [];
 
   for (const user of users) {
@@ -112,14 +218,29 @@ export async function collectForUsers(users: User[]): Promise<CollectResult[]> {
       continue;
     }
 
-    const ingested = await collectForUser(user);
+    const { ingested, latestSeen } = await collectForUser(user, options);
     results.push({
       userId: user.id,
       displayName: user.displayName,
       ingested,
       skipped: false,
+      latestSeen,
     });
   }
 
   return results;
+}
+
+/** Human-readable debug line for admin UI messages. */
+export function formatLatestSeen(latest?: LatestSeen): string {
+  if (!latest) return "Latest AC: none found from APIs.";
+  const when = new Date(latest.timestampSeconds * 1000).toISOString();
+  const label = latest.problemName
+    ? `${latest.problemId} (${latest.problemName})`
+    : latest.problemId;
+  const status = latest.alreadyInDb ? "already recorded" : "not in DB yet";
+  return (
+    `Latest AC: ${latest.platform} ${label} on ${latest.localDate} ` +
+    `(${when}, ${status})`
+  );
 }

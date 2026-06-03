@@ -26,6 +26,16 @@ export function uniqueKey(platform: Platform, problemId: string): string {
   return `${platform}_${problemId}`;
 }
 
+export async function submissionExists(
+  userId: string,
+  platform: Platform,
+  problemId: string
+): Promise<boolean> {
+  const docId = submissionDocId(userId, uniqueKey(platform, problemId));
+  const snap = await db.collection(Collections.submissions).doc(docId).get();
+  return snap.exists;
+}
+
 /**
  * Insert a submission if unseen; bump today's daily status for live dashboard.
  */

@@ -47,6 +47,14 @@ export const api = {
         ingested: number;
         skipped: boolean;
         skipReason?: string;
+        latestSeen?: {
+          platform: string;
+          problemId: string;
+          problemName?: string;
+          timestampSeconds: number;
+          localDate: string;
+          alreadyInDb: boolean;
+        };
       }>;
     }
   >("runSubmissionCheck"),

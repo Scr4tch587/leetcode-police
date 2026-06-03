@@ -33,7 +33,7 @@ export const runSubmissionCheck = onCall(collectOpts, async (req) => {
     targets = await getGroupMembers(admin.groupId!);
   }
 
-  const results = await collectForUsers(targets);
+  const results = await collectForUsers(targets, { includeLatestSeen: true });
   const ingested = results.reduce((s, r) => s + r.ingested, 0);
 
   logger.info("Manual submission check", {
