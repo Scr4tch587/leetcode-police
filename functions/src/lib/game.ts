@@ -11,28 +11,24 @@ import {
   dailyStatusId,
 } from "../types";
 import { countSubmissionsForDay } from "./submissions";
+import { addDays, today } from "./dates";
 
 export const PENALTY_WORDS_PER_MISS = 2;
 
 export interface MidnightOutcome {
   userId: string;
   date: string;
-  status: "solved" | "bankUsed" | "penalty" | "skipped" | "reconciled";
+  status: "solved" | "bankUsed" | "penalty" | "skipped" | "reconciled" | "closed";
   submissionCount?: number;
   extrasBanked?: number;
 }
 
-/** Credit un-banked extras for a day (count - 1 minus already banked at ingest). */
 function extrasToBank(count: number, alreadyBanked: number): number {
   return Math.max(0, count - 1 - alreadyBanked);
 }
 
 /**
- * Resolve one user's calendar day (midnight or backfill).
- *
- *  - N >= 1 → solved; bank += extras not yet credited
- *  - N = 0 && bank > 0 → consume one bank
- *  - N = 0 && no bank → +2 penalty
+ * Resolve one calendar day for ongoing play (yesterday at midnight, or yesterday catch-up).
  */
 export async function resolveUserDay(
   user: Pick<User, "id" | "groupId">,
@@ -115,15 +111,15 @@ export async function resolveUserDay(
 }
 
 /**
- * Backfill banking for days that have submissions but were never resolved
- * (e.g. historical ingest after midnight, or ingest landed after penalty).
+ * Close older backfilled days: mark resolved for the grid, never add bank.
  */
-export async function reconcilePendingDays(
+export async function closeHistoricalDays(
   user: Pick<User, "id" | "groupId">,
   timeZone: string
 ): Promise<MidnightOutcome[]> {
   if (!user.groupId) return [];
 
+  const yesterday = addDays(today(timeZone), -1);
   const snap = await db
     .collection(Collections.dailyStatus)
     .where("userId", "==", user.id)
@@ -131,19 +127,75 @@ export async function reconcilePendingDays(
     .get();
 
   const outcomes: MidnightOutcome[] = [];
+
   for (const doc of snap.docs) {
     const ds = doc.data() as DailyStatus;
-    const count = await countSubmissionsForDay(user.id, ds.date, timeZone);
-    if (count === 0) continue;
+    if (ds.date >= yesterday) continue;
 
-    const outcome = await resolveUserDay(user, ds.date, timeZone);
-    outcomes.push({ ...outcome, status: "reconciled" });
-    logger.info("Reconciled pending day", {
+    const count = await countSubmissionsForDay(user.id, ds.date, timeZone);
+    const dsRef = db
+      .collection(Collections.dailyStatus)
+      .doc(dailyStatusId(user.id, ds.date));
+
+    await dsRef.set(
+      {
+        id: dsRef.id,
+        userId: user.id,
+        groupId: user.groupId!,
+        date: ds.date,
+        solvedToday: count >= 1,
+        bankUsed: false,
+        penaltyApplied: false,
+        submissionCount: count,
+        extrasBanked: Math.max(0, count - 1),
+        resolved: true,
+      },
+      { merge: true }
+    );
+
+    outcomes.push({
+      userId: user.id,
+      date: ds.date,
+      status: "closed",
+      submissionCount: count,
+    });
+    logger.info("Closed historical day (no banking)", {
       userId: user.id,
       date: ds.date,
       count,
-      extrasBanked: outcome.extrasBanked,
     });
   }
+
   return outcomes;
+}
+
+/**
+ * Catch up yesterday only if still unresolved (e.g. ingest after midnight).
+ * Skips older historical dates — those are closed without banking.
+ */
+export async function reconcilePendingDays(
+  user: Pick<User, "id" | "groupId">,
+  timeZone: string
+): Promise<MidnightOutcome[]> {
+  await closeHistoricalDays(user, timeZone);
+
+  const yesterday = addDays(today(timeZone), -1);
+  const dsRef = db
+    .collection(Collections.dailyStatus)
+    .doc(dailyStatusId(user.id, yesterday));
+  const ds = (await dsRef.get()).data() as DailyStatus | undefined;
+
+  if (!ds || ds.resolved) return [];
+
+  const count = await countSubmissionsForDay(user.id, yesterday, timeZone);
+  if (count === 0) return [];
+
+  const outcome = await resolveUserDay(user, yesterday, timeZone);
+  logger.info("Reconciled yesterday", {
+    userId: user.id,
+    date: yesterday,
+    count,
+    extrasBanked: outcome.extrasBanked,
+  });
+  return [{ ...outcome, status: "reconciled" }];
 }

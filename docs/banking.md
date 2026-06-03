@@ -7,9 +7,10 @@ penalty is applied.
 ## Rules
 
 - First valid **new** problem of the day → satisfies the day (`solvedToday`).
-- **2nd+ problem on the same day** (on ingest): `bankedProblems += 1` immediately.
-- At midnight (or after sync backfill), any still-unresolved day with **N** submissions:
+- **2nd+ problem on the same calendar day** (on ingest, **today only**): `bankedProblems += 1`.
+- At **midnight** for **yesterday** with **N** submissions:
   `bankedProblems += max(0, N - 1 - extrasAlreadyBanked)`.
+- **Historical backfill** (older LeetCode dates): recorded for history/grid only — **no banking**.
 - At midnight, for a day with **N = 0**:
   - `bankedProblems > 0` → `bankedProblems -= 1`, mark `bankUsed`. No penalty.
   - otherwise → `wordPenalty += 2`, mark `penaltyApplied`.
@@ -39,4 +40,5 @@ last N minutes" — a submission from 10 minutes ago still ingests if we have ne
 
 - Ingestion: `functions/src/lib/submissions.ts` → `ingestSubmission`
 - Collector: `functions/src/submissionCollector.ts`
-- Midnight: `functions/src/lib/game.ts` → `resolveUserDay`, invoked by `dailyProcessor.ts`
+- Midnight: `functions/src/lib/game.ts` → `resolveUserDay` (`dailyProcessor.ts`)
+- Historical close (no bank): `closeHistoricalDays` after sync

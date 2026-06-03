@@ -14,7 +14,12 @@ import {
   dailyStatusId,
   submissionDocId,
 } from "../types";
-import { localDateString } from "./dates";
+import { localDateString, today } from "./dates";
+
+/** Only today counts for live banking / penalty fixes (not historical backfill). */
+export function isActiveGameDay(date: string, timeZone: string): boolean {
+  return date === today(timeZone);
+}
 
 export interface IncomingSubmission {
   platform: Platform;
@@ -38,7 +43,8 @@ export async function submissionExists(
 }
 
 /**
- * Insert a submission if unseen; update daily status; bank extras live on 2nd+.
+ * Insert a submission if unseen; update daily status.
+ * Banks extras only when the submission falls on **today** (group timezone).
  */
 export async function ingestSubmission(
   user: Pick<User, "id" | "groupId">,
@@ -79,15 +85,17 @@ export async function ingestSubmission(
     let extrasBanked = prev?.extrasBanked ?? 0;
 
     const userUpdates: Record<string, unknown> = {};
+    const activeDay = isActiveGameDay(date, timeZone);
 
-    // 2nd+ problem on this day → bank one immediately.
-    if (newCount >= 2) {
+    // 2nd+ problem today only → bank one (never for historical backfill dates).
+    if (activeDay && newCount >= 2) {
       extrasBanked += 1;
       userUpdates.bankedProblems = FieldValue.increment(1);
     }
 
-    // Submission arrived after midnight penalized an empty day — undo penalty.
+    // Late submission today undoing a false penalty on the same day.
     if (
+      activeDay &&
       newCount === 1 &&
       prev?.resolved &&
       prev.penaltyApplied &&
