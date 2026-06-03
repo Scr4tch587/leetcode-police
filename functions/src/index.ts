@@ -22,4 +22,4 @@ export {
 } from "./handlers/account";
 
 // Admin adjustments (callable)
-export { adjustBank, adjustPenalty } from "./handlers/admin";
+export { adjustBank, adjustPenalty, runSubmissionCheck } from "./handlers/admin";

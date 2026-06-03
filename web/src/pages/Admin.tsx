@@ -9,6 +9,7 @@ export function Admin() {
   const members = useGroupMembers(profile?.groupId);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkMsg, setCheckMsg] = useState<string | null>(null);
 
   if (!profile?.isAdmin) {
     return <main className="container">Admins only.</main>;
@@ -30,6 +31,29 @@ export function Admin() {
     <main className="container">
       <h1>Admin panel</h1>
       {error && <p className="error">{error}</p>}
+      {checkMsg && <p className="success">{checkMsg}</p>}
+
+      <Card title="Submission sync">
+        <p className="muted small">
+          Poll LeetCode and Codeforces now (same logic as the 30-minute cron).
+        </p>
+        <div className="actions" style={{ marginTop: "0.75rem" }}>
+          <button
+            className="btn-primary"
+            disabled={busyId === "check-all"}
+            onClick={() =>
+              void wrap("check-all", async () => {
+                const res = await api.runSubmissionCheck({});
+                setCheckMsg(
+                  `Group check done — ${res.ingested} new submission(s) ingested.`
+                );
+              })
+            }
+          >
+            {busyId === "check-all" ? "Checking…" : "Check entire group"}
+          </button>
+        </div>
+      </Card>
 
       <Card title="Manual adjustments">
         <table className="table">
@@ -41,6 +65,7 @@ export function Admin() {
               <th>Adjust words</th>
               <th>Banked</th>
               <th>Adjust bank</th>
+              <th>Sync</th>
             </tr>
           </thead>
           <tbody>
@@ -98,6 +123,31 @@ export function Admin() {
                     }
                   >
                     +1
+                  </button>
+                </td>
+                <td>
+                  <button
+                    className="btn-small"
+                    disabled={busyId === `check-${m.id}`}
+                    onClick={() =>
+                      void wrap(`check-${m.id}`, async () => {
+                        const res = await api.runSubmissionCheck({
+                          userId: m.id,
+                        });
+                        const r = res.results[0];
+                        if (r?.skipped) {
+                          setCheckMsg(
+                            `${r.displayName}: skipped — ${r.skipReason ?? "unknown"}`
+                          );
+                        } else {
+                          setCheckMsg(
+                            `${r?.displayName ?? m.displayName}: ${res.ingested} new submission(s).`
+                          );
+                        }
+                      })
+                    }
+                  >
+                    Check
                   </button>
                 </td>
               </tr>

@@ -36,4 +36,18 @@ export const api = {
     { userId: string; delta: number },
     { ok: boolean; wordPenalty: number }
   >("adjustPenalty"),
+  runSubmissionCheck: call<
+    { userId?: string },
+    {
+      ok: boolean;
+      ingested: number;
+      results: Array<{
+        userId: string;
+        displayName: string;
+        ingested: number;
+        skipped: boolean;
+        skipReason?: string;
+      }>;
+    }
+  >("runSubmissionCheck"),
 };
