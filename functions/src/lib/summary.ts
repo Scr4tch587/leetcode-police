@@ -74,26 +74,3 @@ export async function buildDailySummary(
   ].join("\n");
 }
 
-/** Build the biweekly leaderboard summary, sorted by fewest words. */
-export async function buildBiweeklySummary(group: Group): Promise<string> {
-  const members = await getGroupMembers(group.id);
-  const leaderboard = [...members].sort(
-    (a, b) => a.wordPenalty - b.wordPenalty
-  );
-
-  const totalPenalties = members.reduce((s, m) => s + m.wordPenalty, 0);
-
-  const board = leaderboard.map(
-    (m, i) =>
-      `${i + 1}. ${m.displayName} — ${m.wordPenalty} words, ${m.bankedProblems} banked`
-  );
-
-  return [
-    `📊 ${group.name} — Biweekly Summary`,
-    "",
-    "Leaderboard (fewest words first)",
-    ...board,
-    "",
-    `Total penalty words: ${totalPenalties}`,
-  ].join("\n");
-}

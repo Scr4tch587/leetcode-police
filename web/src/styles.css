@@ -263,10 +263,34 @@ button:disabled {
   margin: 1rem 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  align-items: center;
+  gap: 0.75rem 1rem;
+  align-items: flex-start;
   justify-content: space-between;
   border: 1px solid var(--border);
+}
+
+.banner-main {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.banner-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.punishment-line {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.punishment-countdown {
+  color: var(--text);
+  font-weight: 500;
 }
 
 .today-banner.ok {

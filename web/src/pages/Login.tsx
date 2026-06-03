@@ -21,8 +21,8 @@ export function Login() {
   return (
     <div className="centered">
       <div className="login-card">
-        <div className="login-emoji">🏆</div>
-        <h1>Problem Club</h1>
+        <div className="login-emoji">👮</div>
+        <h1>LeetCode Police</h1>
         <p className="muted">
           One new problem a day. Miss a day, owe some words. Bank ahead, stay
           safe.

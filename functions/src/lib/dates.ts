@@ -1,5 +1,5 @@
 /**
- * Timezone-aware date helpers. All "days" in Problem Club are computed in a
+ * Timezone-aware date helpers. All "days" in LeetCode Police are computed in a
  * group's local timezone so the midnight cutoff is meaningful for the members.
  */
 

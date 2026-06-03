@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Firestore security rules for Problem Club.
+// Firestore security rules for LeetCode Police.
 //
 // Guiding principles:
 //  - All writes that affect game state (penalties, banks, submissions,

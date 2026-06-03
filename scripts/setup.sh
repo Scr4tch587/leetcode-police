@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One-shot infrastructure setup for Problem Club.
+# One-shot infrastructure setup for LeetCode Police.
 #
 # This script does as much as possible from the CLI so you barely touch the
 # Firebase/Google Cloud console. It will:
@@ -26,7 +26,7 @@ REGION="${REGION:-us-central1}"
 LOCATION="${LOCATION:-nam5}"
 
 if [[ -z "$PROJECT_ID" ]]; then
-  echo "ERROR: set PROJECT_ID, e.g. PROJECT_ID=problem-club ./scripts/setup.sh" >&2
+  echo "ERROR: set PROJECT_ID, e.g. PROJECT_ID=leetcode-police ./scripts/setup.sh" >&2
   exit 1
 fi
 
@@ -66,8 +66,8 @@ else
 fi
 
 echo "==> Registering a Firebase Web app…"
-if ! firebase apps:list WEB --project "$PROJECT_ID" 2>/dev/null | grep -q "problem-club-web"; then
-  firebase apps:create WEB problem-club-web --project "$PROJECT_ID" || true
+if ! firebase apps:list WEB --project "$PROJECT_ID" 2>/dev/null | grep -q "leetcode-police-web"; then
+  firebase apps:create WEB leetcode-police-web --project "$PROJECT_ID" || true
 fi
 echo "    Web SDK config (copy into web/.env.local):"
 firebase apps:sdkconfig WEB --project "$PROJECT_ID" || true

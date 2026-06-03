@@ -1,5 +1,5 @@
 /**
- * Shared domain types for the Problem Club backend.
+ * Shared domain types for the LeetCode Police backend.
  *
  * These mirror the Firestore data model. Keep in sync with `web/src/types.ts`.
  */
@@ -29,6 +29,8 @@ export interface Group {
   inviteCode: string;
   createdBy: string;
   timezone: string;
+  /** YYYY-MM-DD (group timezone) when word counts were last reset on punishment day. */
+  lastBiweeklyReset?: string | null;
   createdAt: Timestamp;
 }
 

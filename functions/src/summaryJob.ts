@@ -1,5 +1,5 @@
 /**
- * Daily summary (after midnight processing) and optional biweekly leaderboard SMS.
+ * Daily summary (after midnight processing) and biweekly punishment day.
  */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
@@ -9,11 +9,16 @@ import { Collections } from "./types";
 import { addDays, today } from "./lib/dates";
 import { broadcastSms } from "./lib/twilio";
 import {
-  buildBiweeklySummary,
   buildDailySummary,
   getAllGroups,
   getGroupMembers,
 } from "./lib/summary";
+import {
+  buildPunishmentDayAdminSms,
+  isBiweeklyDue,
+  lastBiweeklyResetDate,
+  runBiweeklyPunishment,
+} from "./lib/biweeklyPunishment";
 
 const scheduleOpts = {
   region: REGION,
@@ -44,7 +49,7 @@ export const dailySummaryJob = onSchedule(
   }
 );
 
-/** 9 AM daily — biweekly leaderboard when 14+ days since last send. */
+/** 9 AM daily — every 14 days: SMS admin with word tallies, then reset counts. */
 export const biweeklySummaryJob = onSchedule(
   { ...scheduleOpts, schedule: "0 9 * * *" },
   async () => {
@@ -58,27 +63,29 @@ export const biweeklySummaryJob = onSchedule(
           .collection(Collections.meta)
           .doc(`biweekly_${g.id}`);
         const meta = await metaRef.get();
-        const last = (meta.data()?.lastSent as string | undefined) ?? null;
+        const metaLast = (meta.data()?.lastSent as string | undefined) ?? null;
 
-        const due =
-          !last ||
-          Math.floor(
-            (Date.parse(`${date}T00:00:00Z`) -
-              Date.parse(`${last}T00:00:00Z`)) /
-              86400000
-          ) >= 14;
-        if (!due) return;
+        if (!isBiweeklyDue(g, metaLast, date)) return;
 
         const members = await getGroupMembers(g.id);
-        const phones = members.map((m) => m.phoneNumber).filter(Boolean);
-        if (phones.length > 0) {
-          const body = await buildBiweeklySummary(g);
-          await broadcastSms(phones, body);
+        const admins = members.filter((m) => m.isAdmin && m.phoneNumber);
+        if (admins.length > 0) {
+          const body = buildPunishmentDayAdminSms(g, members);
+          await broadcastSms(
+            admins.map((a) => a.phoneNumber),
+            body
+          );
+        } else {
+          logger.warn("Biweekly punishment: no admin phone on file", {
+            groupId: g.id,
+            lastReset: lastBiweeklyResetDate(g, metaLast),
+          });
         }
-        await metaRef.set({ lastSent: date }, { merge: true });
+
+        await runBiweeklyPunishment(g, date);
       })
     );
 
-    logger.info("Biweekly summary check finished", { date });
+    logger.info("Biweekly punishment check finished", { date });
   }
 );

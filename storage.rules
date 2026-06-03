@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Storage rules for Problem Club.
+// Storage rules for LeetCode Police.
 // Screenshots are written ONLY by the Twilio webhook Cloud Function (admin
 // SDK, bypasses rules). Clients may read screenshots that belong to their
 // group's submissions, but the simplest safe default is to serve images via

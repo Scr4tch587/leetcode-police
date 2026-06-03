@@ -1,4 +1,4 @@
-# Problem Club
+# LeetCode Police
 
 A fully serverless web app for a group of friends who commit to solving **one
 new LeetCode or Codeforces problem per day**. Accepted submissions are ingested
@@ -22,6 +22,7 @@ banking and penalties at midnight, and sends optional SMS reminders and summarie
   - **0 submissions** and **bank > 0** → consume one bank (no penalty).
   - **0 submissions** and **no bank** → **+2 penalty words**.
 - **11 PM** — SMS reminder if not solved today (optional, needs phone on profile).
+- **Every 14 days (9 AM)** — **punishment day**: word counts reset to 0; the group admin gets an SMS listing each member's words for that cycle.
 
 See [`docs/banking.md`](docs/banking.md) for a worked example.
 
@@ -151,7 +152,7 @@ After this refactor, delete obsolete Cloud Functions in the console if deploy wa
 | `dailyProcessor` | `5 0 * * *` | Resolve previous day (bank/penalty) |
 | `reminderJob` | `0 23 * * *` | SMS if not solved today |
 | `dailySummaryJob` | `10 0 * * *` | Group results SMS |
-| `biweeklySummaryJob` | `0 9 * * *` | Leaderboard every 14 days |
+| `biweeklySummaryJob` | `0 9 * * *` | Punishment day every 14 days: SMS admin word tallies, reset all counts |
 
 Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigning submission dates and midnight resolution.
 

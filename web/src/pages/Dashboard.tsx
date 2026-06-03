@@ -1,11 +1,14 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../api";
 import { Card } from "../components/ui";
 import {
   useGroupDailyStatus,
   useGroupMembers,
   useUserSubmissions,
 } from "../hooks/useGroupData";
+import { manualCheckMessage } from "../lib/checkMessages";
+import { getNextPunishmentDayInfo } from "../lib/punishmentCycle";
 import type { DailyStatus } from "../types";
 
 function localDate(tz: string, offsetDays = 0): string {
@@ -42,8 +45,18 @@ export function Dashboard() {
   const statuses = useGroupDailyStatus(group?.id);
   const recentSubs = useUserSubmissions(profile?.id, 8);
 
+  const [tick, setTick] = useState(0);
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [checkMsg, setCheckMsg] = useState<string | null>(null);
+
   const tz = group?.timezone || "America/Toronto";
   const todayStr = localDate(tz);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const days = useMemo(
     () => Array.from({ length: 14 }, (_, i) => localDate(tz, -(13 - i))),
@@ -62,31 +75,78 @@ export function Dashboard() {
     Boolean(profile?.leetcodeUsername?.trim()) ||
     Boolean(profile?.codeforcesHandle?.trim());
 
+  const punishment = useMemo(
+    () =>
+      getNextPunishmentDayInfo({
+        timeZone: tz,
+        lastBiweeklyReset: group?.lastBiweeklyReset,
+        groupCreatedAt: group?.createdAt,
+        currentWords: profile?.wordPenalty ?? 0,
+      }),
+    [tz, group?.lastBiweeklyReset, group?.createdAt, profile?.wordPenalty, tick]
+  );
+
+  const runSelfCheck = async () => {
+    setCheckBusy(true);
+    setCheckError(null);
+    setCheckMsg(null);
+    try {
+      const res = await api.runSelfSubmissionCheck({});
+      setCheckMsg(manualCheckMessage(res));
+    } catch (e) {
+      setCheckError((e as Error).message);
+    } finally {
+      setCheckBusy(false);
+    }
+  };
+
   return (
     <main className="container">
       <h1>Dashboard</h1>
 
       <div className={`today-banner ${mySolved ? "ok" : "todo"}`}>
-        {mySolved ? (
-          <>✅ Today solved — {myToday?.submissionCount ?? 1} accepted problem(s).</>
-        ) : (
-          <>
-            ⏳ Not solved yet today.{" "}
-            {hasHandles ? (
-              <>Submissions sync automatically from LeetCode / Codeforces.</>
-            ) : (
-              <>
-                Add your LeetCode username and/or Codeforces handle in{" "}
-                <a href="#/profile">Profile</a>.
-              </>
+        <div className="banner-main">
+          {mySolved ? (
+            <>✅ Today solved — {myToday?.submissionCount ?? 1} accepted problem(s).</>
+          ) : (
+            <>
+              ⏳ Not solved yet today.{" "}
+              {hasHandles ? (
+                <>Submissions sync automatically from LeetCode / Codeforces.</>
+              ) : (
+                <>
+                  Add your LeetCode username and/or Codeforces handle in{" "}
+                  <a href="#/profile">Profile</a>.
+                </>
+              )}
+            </>
+          )}
+          <p className="punishment-line">
+            <strong>{punishment.headline}:</strong> {punishment.detail}
+            {punishment.countdown && (
+              <span className="punishment-countdown"> · {punishment.countdown}</span>
             )}
-          </>
-        )}
-        <span className="banner-stats">
-          🏦 {profile?.bankedProblems ?? 0} banked · ✍️ {profile?.wordPenalty ?? 0}{" "}
-          words
-        </span>
+          </p>
+        </div>
+        <div className="banner-aside">
+          <span className="banner-stats">
+            🏦 {profile?.bankedProblems ?? 0} banked · ✍️ {profile?.wordPenalty ?? 0}{" "}
+            words
+          </span>
+          {hasHandles && (
+            <button
+              className="btn-secondary btn-small"
+              disabled={checkBusy}
+              onClick={() => void runSelfCheck()}
+            >
+              {checkBusy ? "Checking…" : "Check self"}
+            </button>
+          )}
+        </div>
       </div>
+
+      {checkError && <p className="error">{checkError}</p>}
+      {checkMsg && <pre className="success check-debug">{checkMsg}</pre>}
 
       <Card title="Recent submissions">
         {recentSubs.length === 0 ? (

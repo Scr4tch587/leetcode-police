@@ -8,7 +8,7 @@ export function NavBar() {
   return (
     <header className="navbar">
       <div className="navbar-inner">
-        <div className="brand">🏆 Problem Club</div>
+        <div className="brand">👮 LeetCode Police</div>
         <nav className="nav-links">
           {inGroup && (
             <>

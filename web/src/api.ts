@@ -36,6 +36,15 @@ export const api = {
     { userId: string; delta: number },
     { ok: boolean; wordPenalty: number }
   >("adjustPenalty"),
+  runSelfSubmissionCheck: call<
+    Record<string, never>,
+    {
+      ok: boolean;
+      ingested: number;
+      message: string;
+      results: Array<{ debugMessage?: string }>;
+    }
+  >("runSelfSubmissionCheck"),
   runSubmissionCheck: call<
     { userId?: string },
     {

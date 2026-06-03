@@ -22,6 +22,7 @@ export interface Group {
   inviteCode: string;
   createdBy: string;
   timezone: string;
+  lastBiweeklyReset?: string | null;
   createdAt: Timestamp | null;
 }
 
