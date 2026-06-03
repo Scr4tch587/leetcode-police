@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Builds
+web/dist/
+functions/lib/
+
+# Env / secrets
+**/.env
+**/.env.local
+**/.env.*.local
+functions/.env
+functions/.env.*
+!**/.env.example
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+
+# Service account keys — never commit
+*serviceAccount*.json
+*service-account*.json
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

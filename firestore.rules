@@ -1,0 +1,114 @@
+rules_version = '2';
+
+// Firestore security rules for Problem Club.
+//
+// Guiding principles:
+//  - All writes that affect game state (penalties, banks, submissions,
+//    daily status, problem history) are performed exclusively by Cloud
+//    Functions running with admin privileges, which BYPASS these rules.
+//  - These rules therefore govern only direct client reads/writes.
+//  - A signed-in user may read data belonging to THEIR group only.
+//  - A user may edit a narrow set of fields on their own user document
+//    (e.g. displayName); everything game-related is read-only to clients.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Helpers -----------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    // The caller's group id (null if the user doc or group is missing).
+    function myGroupId() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? userDoc(request.auth.uid).data.groupId
+        : null;
+    }
+
+    function isAdminOfGroup(groupId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).data.groupId == groupId
+        && userDoc(request.auth.uid).data.isAdmin == true;
+    }
+
+    function sameGroup(groupId) {
+      return groupId != null && myGroupId() == groupId;
+    }
+
+    // ---- users -------------------------------------------------------------
+    match /users/{userId} {
+      // A user can read their own doc, or any user in their group.
+      allow get: if isSignedIn()
+        && (request.auth.uid == userId || resource.data.groupId == myGroupId());
+
+      // Listing users is restricted to members of the same group. The rule is
+      // evaluated per returned document, so group-scoped queries succeed while
+      // an unscoped "list all users" query is denied.
+      allow list: if isSignedIn() && resource.data.groupId == myGroupId();
+
+      // The user document is created by a Cloud Function on first sign-in,
+      // but we also allow a self-create as a fallback for the very first
+      // bootstrap (only for their own uid and with no admin/penalty fields set).
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.wordPenalty == 0
+        && request.resource.data.bankedProblems == 0
+        && request.resource.data.isAdmin == false;
+
+      // A user may update only profile fields on their OWN document. Game
+      // state fields are immutable from the client (Functions bypass rules).
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['displayName', 'phoneNumber'])
+        // phone/displayName changes only; everything else must be unchanged.
+        && request.resource.data.wordPenalty == resource.data.wordPenalty
+        && request.resource.data.bankedProblems == resource.data.bankedProblems
+        && request.resource.data.isAdmin == resource.data.isAdmin
+        && request.resource.data.groupId == resource.data.groupId;
+
+      allow delete: if false;
+    }
+
+    // ---- groups ------------------------------------------------------------
+    match /groups/{groupId} {
+      // Members can read their own group. Group creation/joining is done via
+      // Cloud Functions (so invite codes can be validated server-side), but we
+      // allow a member of the group to read it.
+      allow get: if isSignedIn() && sameGroup(groupId);
+      allow list: if false; // never list all groups from the client
+      allow create, update, delete: if false; // Functions only
+    }
+
+    // ---- submissions -------------------------------------------------------
+    match /submissions/{submissionId} {
+      // Any group member can read submissions belonging to their group.
+      allow get, list: if isSignedIn() && sameGroup(resource.data.groupId);
+      // All writes happen through the Twilio webhook / admin Functions.
+      allow create, update, delete: if false;
+    }
+
+    // ---- problemHistory ----------------------------------------------------
+    match /problemHistory/{docId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // ---- dailyStatus -------------------------------------------------------
+    match /dailyStatus/{docId} {
+      allow get, list: if isSignedIn() && sameGroup(resource.data.groupId);
+      allow create, update, delete: if false;
+    }
+
+    // ---- everything else ---------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
