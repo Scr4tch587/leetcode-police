@@ -126,7 +126,9 @@ function formatOneLatest(ls: LatestSeen): string {
   const label = ls.problemName
     ? `${ls.problemId} (${ls.problemName})`
     : ls.problemId;
-  const status = ls.alreadyInDb ? "already recorded" : "not in DB yet";
+  const status = ls.alreadyInDb
+    ? "in database"
+    : "not in database (was not written this run)";
   return (
     `${ls.platform}: ${label} on ${ls.localDate} (${when}, ${status})`
   );
@@ -143,7 +145,7 @@ export function formatUserCheckDebug(r: CollectResult): string {
   }
 
   lines.push(
-    `${r.displayName}: ${r.ingested} new submission(s) ingested.`
+    `${r.displayName}: ${r.ingested} new problem(s) written to Firestore this run.`
   );
 
   const seenLc = Boolean(
@@ -179,7 +181,7 @@ export function formatGroupCheckDebug(
   totalIngested: number
 ): string {
   return [
-    `Manual check — ${totalIngested} new submission(s) ingested across ${results.length} member(s).`,
+    `Manual check — ${totalIngested} new problem(s) written across ${results.length} member(s).`,
     "",
     ...results.map((r) => r.debugMessage ?? formatUserCheckDebug(r)),
   ].join("\n");
@@ -194,15 +196,15 @@ export async function collectForUser(
 
   const tz = await getGroupTimezone(user.groupId);
   const sixtyDaysAgo = Math.floor(Date.now() / 1000) - 60 * 86400;
-  const since = Math.max(user.lastProcessedTimestamp ?? 0, sixtyDaysAgo);
+  const cfSince = Math.max(user.lastProcessedTimestamp ?? 0, sixtyDaysAgo);
   let ingested = 0;
-  let maxTs = since;
+  let maxNewTs = 0;
 
   if (user.codeforcesHandle?.trim()) {
     try {
       const subs = await fetchAcceptedSubmissions(
         user.codeforcesHandle.trim(),
-        since
+        cfSince
       );
       for (const s of subs) {
         const added = await ingestSubmission(
@@ -215,8 +217,10 @@ export async function collectForUser(
           },
           tz
         );
-        if (added) ingested++;
-        maxTs = Math.max(maxTs, s.timestamp);
+        if (added) {
+          ingested++;
+          maxNewTs = Math.max(maxNewTs, s.timestamp);
+        }
       }
     } catch (err) {
       logger.error("Codeforces collect failed", {
@@ -227,11 +231,15 @@ export async function collectForUser(
     }
   }
 
+  // LeetCode: always scan recent AC list; dedupe via Firestore doc id only.
+  // Do not filter by lastProcessedTimestamp — it was advancing without ingests
+  // and caused fresh submissions to be skipped.
   if (user.leetcodeUsername?.trim()) {
     try {
       const subs = await fetchRecentAccepted(
         user.leetcodeUsername.trim(),
-        since
+        0,
+        50
       );
       for (const s of subs) {
         const added = await ingestSubmission(
@@ -244,8 +252,10 @@ export async function collectForUser(
           },
           tz
         );
-        if (added) ingested++;
-        maxTs = Math.max(maxTs, s.timestamp);
+        if (added) {
+          ingested++;
+          maxNewTs = Math.max(maxNewTs, s.timestamp);
+        }
       }
     } catch (err) {
       logger.error("LeetCode collect failed", {
@@ -256,8 +266,8 @@ export async function collectForUser(
     }
   }
 
-  if (maxTs > since) {
-    await updateLastProcessed(user.id, maxTs);
+  if (ingested > 0 && maxNewTs > 0) {
+    await updateLastProcessed(user.id, maxNewTs);
   }
 
   const latestSeenByPlatform = options?.includeLatestSeen

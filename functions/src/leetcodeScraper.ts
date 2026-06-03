@@ -23,6 +23,14 @@ export interface LeetCodeSubmission {
   timestamp: number;
 }
 
+/** LeetCode returns Unix seconds; guard against accidental ms values. */
+export function normalizeLeetCodeTimestamp(raw: string | number): number {
+  const ts = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+  if (!Number.isFinite(ts)) return 0;
+  // > year 2100 in seconds → treat as milliseconds
+  return ts > 4_102_444_800 ? Math.floor(ts / 1000) : ts;
+}
+
 const MIN_INTERVAL_MS = 1200;
 let lastRequestAt = 0;
 
@@ -103,8 +111,8 @@ export async function fetchRecentAccepted(
   const out: LeetCodeSubmission[] = [];
 
   for (const row of rows) {
-    const ts = parseInt(row.timestamp, 10);
-    if (!Number.isFinite(ts) || ts < sinceSeconds) continue;
+    const ts = normalizeLeetCodeTimestamp(row.timestamp);
+    if (ts <= 0 || ts < sinceSeconds) continue;
     out.push({
       problemId: row.titleSlug || row.id,
       problemName: row.title,

@@ -14,6 +14,11 @@ penalty is applied.
 
 Each `platform + problemId` counts at most once per user (idempotent submission docs).
 
+**"New" in admin sync messages** means a problem was **written to Firestore for the first time**
+on that run (first time you've AC'd that problem on that platform). It is not "accepted in the
+last N minutes" — a submission from 10 minutes ago still ingests if we have never recorded that
+`titleSlug` / problem id before.
+
 ## Example
 
 **Day 1** — user solves 2 valid new problems (synced from APIs).
