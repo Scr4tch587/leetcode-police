@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { TWILIO_NUMBER } from "../firebase";
 import { Card } from "../components/ui";
-import { useGroupDailyStatus, useGroupMembers } from "../hooks/useGroupData";
+import {
+  useGroupDailyStatus,
+  useGroupMembers,
+  useUserSubmissions,
+} from "../hooks/useGroupData";
 import type { DailyStatus } from "../types";
 
 function localDate(tz: string, offsetDays = 0): string {
@@ -16,18 +19,18 @@ function localDate(tz: string, offsetDays = 0): string {
   }).format(d);
 }
 
-type Cell = "satisfied" | "bank" | "miss" | "none";
+type Cell = "solved" | "bank" | "miss" | "none";
 
 function cellFor(ds: DailyStatus | undefined): Cell {
   if (!ds) return "none";
-  if (ds.satisfied) return "satisfied";
+  if (ds.solvedToday) return "solved";
   if (ds.bankUsed) return "bank";
   if (ds.penaltyApplied) return "miss";
   return "none";
 }
 
 const CELL_GLYPH: Record<Cell, string> = {
-  satisfied: "✅",
+  solved: "✅",
   bank: "🏦",
   miss: "❌",
   none: "·",
@@ -37,50 +40,75 @@ export function Dashboard() {
   const { profile, group } = useAuth();
   const members = useGroupMembers(group?.id);
   const statuses = useGroupDailyStatus(group?.id);
+  const recentSubs = useUserSubmissions(profile?.id, 8);
 
   const tz = group?.timezone || "America/Toronto";
-  const today = localDate(tz);
+  const todayStr = localDate(tz);
 
-  // Last 14 days (most recent last) for the history grid.
   const days = useMemo(
     () => Array.from({ length: 14 }, (_, i) => localDate(tz, -(13 - i))),
     [tz]
   );
 
-  // Index statuses by `${userId}_${date}`.
   const byKey = useMemo(() => {
     const m = new Map<string, DailyStatus>();
     for (const s of statuses) m.set(`${s.userId}_${s.date}`, s);
     return m;
   }, [statuses]);
 
-  const myToday = byKey.get(`${profile?.id}_${today}`);
-  const mySatisfied = myToday?.satisfied ?? false;
+  const myToday = byKey.get(`${profile?.id}_${todayStr}`);
+  const mySolved = myToday?.solvedToday ?? false;
+  const hasHandles =
+    Boolean(profile?.leetcodeUsername?.trim()) ||
+    Boolean(profile?.codeforcesHandle?.trim());
 
   return (
     <main className="container">
       <h1>Dashboard</h1>
 
-      {/* Personal status banner */}
-      <div className={`today-banner ${mySatisfied ? "ok" : "todo"}`}>
-        {mySatisfied ? (
-          <>✅ You've completed today's problem.</>
+      <div className={`today-banner ${mySolved ? "ok" : "todo"}`}>
+        {mySolved ? (
+          <>✅ Today solved — {myToday?.submissionCount ?? 1} accepted problem(s).</>
         ) : (
           <>
-            ⏳ You haven't submitted today.{" "}
-            {TWILIO_NUMBER ? (
-              <>
-                Text a screenshot to <strong>{TWILIO_NUMBER}</strong>.
-              </>
+            ⏳ Not solved yet today.{" "}
+            {hasHandles ? (
+              <>Submissions sync automatically from LeetCode / Codeforces.</>
             ) : (
-              <>Text a screenshot to your group's Twilio number.</>
+              <>
+                Add your LeetCode username and/or Codeforces handle in{" "}
+                <a href="#/profile">Profile</a>.
+              </>
             )}
           </>
         )}
         <span className="banner-stats">
-          🏦 {profile?.bankedProblems ?? 0} banked · ✍️ {profile?.wordPenalty ?? 0} words
+          🏦 {profile?.bankedProblems ?? 0} banked · ✍️ {profile?.wordPenalty ?? 0}{" "}
+          words
         </span>
       </div>
+
+      <Card title="Recent submissions">
+        {recentSubs.length === 0 ? (
+          <p className="muted">No accepted submissions recorded yet.</p>
+        ) : (
+          <ul className="recent-list">
+            {recentSubs.map((s) => (
+              <li key={s.id}>
+                <span className={`badge badge-platform ${s.platform}`}>
+                  {s.platform === "leetcode" ? "LC" : "CF"}
+                </span>{" "}
+                <strong>{s.problemId}</strong>
+                {s.problemName ? ` — ${s.problemName}` : ""}
+                <span className="muted small">
+                  {" "}
+                  · {s.timestamp?.toDate?.().toLocaleString() ?? "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <Card title="Standings" actions={<span className="muted">fewest words first</span>}>
         <table className="table">
@@ -95,7 +123,7 @@ export function Dashboard() {
           </thead>
           <tbody>
             {members.map((m, i) => {
-              const t = byKey.get(`${m.id}_${today}`);
+              const t = byKey.get(`${m.id}_${todayStr}`);
               return (
                 <tr key={m.id} className={m.id === profile?.id ? "me" : ""}>
                   <td>{i + 1}</td>
@@ -155,7 +183,8 @@ export function Dashboard() {
       {group && (
         <Card title="Invite">
           <p>
-            Share this code so friends can join: <code className="invite">{group.inviteCode}</code>
+            Share this code so friends can join:{" "}
+            <code className="invite">{group.inviteCode}</code>
           </p>
         </Card>
       )}

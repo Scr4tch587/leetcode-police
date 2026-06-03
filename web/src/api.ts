@@ -1,4 +1,3 @@
-/** Typed wrappers around the callable Cloud Functions. */
 import { httpsCallable } from "firebase/functions";
 import { functions } from "./firebase";
 
@@ -12,7 +11,12 @@ export const api = {
     "bootstrapUser"
   ),
   updateProfile: call<
-    { displayName?: string; phoneNumber?: string },
+    {
+      displayName?: string;
+      phoneNumber?: string;
+      leetcodeUsername?: string;
+      codeforcesHandle?: string;
+    },
     { ok: boolean }
   >("updateProfile"),
   createGroup: call<
@@ -24,13 +28,6 @@ export const api = {
     { groupId: string; groupName: string }
   >("joinGroup"),
   leaveGroup: call<Record<string, never>, { ok: boolean }>("leaveGroup"),
-  approveSubmission: call<{ submissionId: string }, { ok: boolean }>(
-    "approveSubmission"
-  ),
-  rejectSubmission: call<
-    { submissionId: string; note?: string },
-    { ok: boolean }
-  >("rejectSubmission"),
   adjustBank: call<
     { userId: string; delta: number },
     { ok: boolean; bankedProblems: number }

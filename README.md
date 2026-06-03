@@ -1,33 +1,29 @@
-# 🏆 Problem Club
+# Problem Club
 
 A fully serverless web app for a group of friends who commit to solving **one
-new LeetCode or Codeforces problem per day**. You submit proof by texting a
-screenshot to a Twilio number; the system runs OCR, validates the problem,
-tracks submissions, sends reminders, applies penalties, and lets you **bank**
-extra problems to cover future missed days.
+new LeetCode or Codeforces problem per day**. Accepted submissions are ingested
+automatically from public platform APIs; the system tracks events, applies
+banking and penalties at midnight, and sends optional SMS reminders and summaries.
 
 - **Frontend:** React + TypeScript + Vite → GitHub Pages
-- **Backend:** Firebase Cloud Functions (2nd gen), Firestore, Firebase Scheduler
+- **Backend:** Firebase Cloud Functions (2nd gen), Firestore, Cloud Scheduler
 - **Auth:** Firebase Authentication (Google Sign-In)
-- **Messaging:** Twilio SMS/MMS
-- **OCR:** Tesseract.js
-- **Platforms:** LeetCode, Codeforces (extensible)
+- **Platforms:** Codeforces API, LeetCode unofficial GraphQL
+- **Messaging:** Twilio SMS (reminders + summaries only)
 
 ---
 
 ## How the game works
 
-- Each day, every user must complete **one new problem**.
-- The **first** valid new problem each day satisfies the requirement.
-- Each **additional** valid new problem that day is **banked** (`bankedProblems += 1`).
-- At midnight (local time), for each user:
-  - **Satisfied** → nothing happens.
-  - **Not satisfied but bank > 0** → consume one banked problem (no penalty).
-  - **Not satisfied and bank = 0** → **+2 penalty words**.
-- A problem already solved by that user (tracked in `problemHistory`) does **not**
-  count — it is flagged for manual admin review.
+- Each day, every user must complete **one new problem** (unique per user lifetime).
+- The **submission collector** runs every 30 minutes and records new accepted submissions.
+- At **midnight** (group timezone):
+  - **1+ submissions that day** → day complete; extras add to `bankedProblems` (`count - 1`).
+  - **0 submissions** and **bank > 0** → consume one bank (no penalty).
+  - **0 submissions** and **no bank** → **+2 penalty words**.
+- **11 PM** — SMS reminder if not solved today (optional, needs phone on profile).
 
-See the worked banking example in [`docs/banking.md`](docs/banking.md).
+See [`docs/banking.md`](docs/banking.md) for a worked example.
 
 ---
 
@@ -35,204 +31,135 @@ See the worked banking example in [`docs/banking.md`](docs/banking.md).
 
 ```
 .
-├── firebase.json            # Firebase project config (functions, firestore, storage, emulators)
-├── .firebaserc              # Default project alias
-├── firestore.rules          # Firestore security rules (group-scoped access)
-├── firestore.indexes.json   # Composite indexes
-├── storage.rules            # Storage rules (screenshots served via signed URLs)
-├── scripts/setup.sh         # One-shot IAC: enable APIs, create DB, deploy
-├── functions/               # Cloud Functions (TypeScript)
-│   └── src/
-│       ├── index.ts         # Exports all deployable functions
-│       ├── config.ts        # Params & secrets (region, timezone, Twilio)
-│       ├── types.ts         # Domain model
-│       ├── platforms/       # Pluggable platform detectors (leetcode, codeforces)
-│       ├── lib/             # admin, ocr, twilio, storage, dates, game, summary
-│       └── handlers/        # twilioWebhook, scheduled, account, admin
-└── web/                     # React frontend (Vite)
-    └── src/
-        ├── firebase.ts      # SDK init + emulator wiring
-        ├── api.ts           # Typed callable wrappers
-        ├── contexts/        # AuthContext
-        ├── hooks/           # Realtime Firestore subscriptions
-        ├── pages/           # Login, GroupSetup, Dashboard, History, Admin, Profile
-        └── components/      # NavBar, UI primitives
+├── firebase.json
+├── firestore.rules / firestore.indexes.json
+├── functions/src/
+│   ├── index.ts
+│   ├── submissionCollector.ts   # poll LC + CF every 30 min
+│   ├── dailyProcessor.ts          # midnight bank/penalty
+│   ├── reminderJob.ts             # 11 PM SMS
+│   ├── summaryJob.ts              # daily + biweekly SMS
+│   ├── leetcodeScraper.ts
+│   ├── codeforcesClient.ts
+│   ├── lib/                       # game, submissions, twilio, dates, summary
+│   └── handlers/                  # account, admin callables
+└── web/src/                       # React dashboard
 ```
 
 ---
 
 ## Data model (Firestore)
 
-| Collection       | Doc id                                  | Notes |
-|------------------|-----------------------------------------|-------|
-| `users`          | Firebase Auth UID                       | profile, `groupId`, `wordPenalty`, `bankedProblems`, `isAdmin` |
-| `groups`         | auto                                    | `name`, `inviteCode`, `timezone`, `createdBy` |
-| `submissions`    | auto                                    | one per inbound text; `platform`, `problemIdentifier`, `validationStatus`, `screenshotUrl`, `date` |
-| `problemHistory` | `${userId}_${platform}_${id}`           | first time a user solved a problem (duplicate detection) |
-| `dailyStatus`    | `${userId}_${date}`                     | `satisfied`, `bankUsed`, `penaltyApplied`, `submissionCount` |
-| `meta`           | `biweekly_${groupId}`                   | bookkeeping for the 14-day summary |
+| Collection    | Doc id                         | Notes |
+|---------------|--------------------------------|-------|
+| `users`       | Firebase Auth UID              | handles, `bankedProblems`, `wordPenalty`, `lastProcessedTimestamp` |
+| `groups`      | auto                           | `timezone`, `inviteCode` |
+| `submissions` | `{userId}_{platform}_{problemId}` | accepted events (source of truth) |
+| `dailyStatus` | `{userId}_{date}`              | `solvedToday`, `bankUsed`, `penaltyApplied`, `resolved` |
 
-> **Security model:** all game-state writes happen inside Cloud Functions
-> (admin SDK, which bypasses rules). The Firestore rules only govern *direct
-> client access* and restrict every read to the caller's own group. Clients can
-> never mutate penalties, banks, submissions or statuses directly.
+All game-state writes run in Cloud Functions (admin SDK).
+
+---
+
+## Environment variables
+
+### Cloud Functions (`functions/.env` or Secret Manager)
+
+| Name | Secret? | Purpose |
+|------|---------|---------|
+| `TIMEZONE` | no | IANA timezone for cron schedules (default `America/Toronto`) |
+| `TWILIO_ACCOUNT_SID` | no | Twilio account SID |
+| `TWILIO_FROM_NUMBER` | no | E.164 sender for SMS |
+| `TWILIO_AUTH_TOKEN` | **yes** | `firebase functions:secrets:set TWILIO_AUTH_TOKEN` |
+
+### Web (`web/.env.local`)
+
+| Name | Purpose |
+|------|---------|
+| `VITE_FIREBASE_*` | Firebase web SDK config |
+| `VITE_FUNCTIONS_REGION` | e.g. `us-central1` |
+| `VITE_USE_EMULATORS` | `true` for local dev |
 
 ---
 
 ## Prerequisites
 
 - Node.js 20+
-- A Firebase project on the **Blaze (pay-as-you-go)** plan (required for Cloud
-  Functions, outbound network, and Cloud Scheduler).
-- The Firebase CLI: `npm i -g firebase-tools` then `firebase login`.
-- The `gcloud` CLI (for `scripts/setup.sh`): `gcloud auth login`.
-- A Twilio account with an SMS/MMS-capable phone number.
+- Firebase project on **Blaze** plan
+- Firebase CLI + (optional) `gcloud` for `scripts/setup.sh`
+- Twilio account (optional, for SMS)
 
 ---
 
 ## Local development
 
-### 1. Install
-
 ```bash
 cd functions && npm install && cd ..
 cd web && npm install && cd ..
+
+cp functions/.env.example functions/.env
+cp web/.env.example web/.env.local   # VITE_USE_EMULATORS=true
 ```
 
-### 2. Configure
-
 ```bash
-cp functions/.env.example functions/.env     # set TIMEZONE, TWILIO_* (non-secret)
-cp web/.env.example web/.env.local            # set VITE_FIREBASE_* + VITE_USE_EMULATORS=true
-```
-
-Get the web SDK config with `firebase apps:sdkconfig web`.
-
-### 3. Run the emulators + frontend
-
-```bash
-# Terminal 1 — Firebase emulators (auth, firestore, functions, storage)
+# Terminal 1
 cd functions && npm run serve
 
-# Terminal 2 — Vite dev server
+# Terminal 2
 cd web && npm run dev
 ```
 
-Set `VITE_USE_EMULATORS=true` in `web/.env.local` so the frontend talks to the
-local emulators. The Emulator UI is at http://127.0.0.1:4000.
-
-### Testing the Twilio webhook locally
-
-With `VALIDATE_TWILIO_SIGNATURE=false` in `functions/.env`, POST a fake message
-to the local function (use a real, publicly-reachable `MediaUrl0` for OCR, or
-adapt `downloadTwilioMedia` to read a local file):
-
-```bash
-curl -X POST "http://127.0.0.1:5001/<PROJECT_ID>/us-central1/twilioWebhook" \
-  --data-urlencode "From=+15195551234" \
-  --data-urlencode "NumMedia=1" \
-  --data-urlencode "MediaUrl0=https://example.com/accepted.png" \
-  --data-urlencode "MediaContentType0=image/png"
-```
-
-Use the Firestore emulator UI to create a `users` doc whose `phoneNumber`
-matches `From`.
+Emulator UI: http://127.0.0.1:4000
 
 ---
 
 ## Deployment
 
-### A. Provision everything (one command)
+### Provision (CLI)
 
 ```bash
 PROJECT_ID=<your-project-id> \
-TWILIO_AUTH_TOKEN=<your-twilio-token> \
+TWILIO_AUTH_TOKEN=<token> \
 ./scripts/setup.sh
 ```
 
-This enables all APIs, creates the Firestore DB and Storage bucket, registers a
-web app, stores the Twilio secret, and deploys rules + functions. The script
-prints your web SDK config and the webhook URL at the end.
+### Manual (one-time)
 
-### B. The one manual console step
+1. Firebase Console → Authentication → enable **Google**.
+2. Add GitHub Pages domain under Authorized domains.
 
-Programmatically enabling Google Sign-In requires an OAuth client, so do this
-once in the console:
+### Frontend (GitHub Pages)
 
-1. **Firebase Console → Authentication → Sign-in method → enable _Google_.**
-2. **Authentication → Settings → Authorized domains →** add your GitHub Pages
-   domain, e.g. `your-username.github.io`.
+Set Actions secrets for `VITE_FIREBASE_*` and deploy via `.github/workflows/deploy-web.yml`.
 
-### C. Point Twilio at the webhook
+### Functions
 
-In the Twilio console, set your number's **Messaging → "A message comes in"**
-webhook to **HTTP POST**:
-
-```
-https://us-central1-<PROJECT_ID>.cloudfunctions.net/twilioWebhook
+```bash
+cd functions && npm run build
+firebase deploy --only functions,firestore:indexes,firestore:rules
 ```
 
-### D. Deploy the frontend to GitHub Pages
-
-The workflow [`.github/workflows/deploy-web.yml`](.github/workflows/deploy-web.yml)
-builds and deploys `web/` on every push to `main`.
-
-1. **GitHub repo → Settings → Pages → Source: GitHub Actions.**
-2. **Settings → Secrets and variables → Actions →** add:
-   `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`,
-   `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`,
-   `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`,
-   `VITE_FUNCTIONS_REGION` (`us-central1`), and optionally `VITE_TWILIO_NUMBER`.
-3. Push to `main` (or run the workflow manually).
-
-The app is served at `https://<user>.github.io/<repo>/` (HashRouter is used so
-client-side routing works without server config; a `404.html` fallback is also
-emitted).
-
-### E. (Optional) CI deploy of Functions
-
-[`.github/workflows/deploy-firebase.yml`](.github/workflows/deploy-firebase.yml)
-deploys functions/rules/indexes on push. Add secrets `FIREBASE_PROJECT_ID` and
-`FIREBASE_SERVICE_ACCOUNT` (a service-account JSON key with roles: Firebase
-Admin, Cloud Functions Admin, Service Account User, Cloud Scheduler Admin,
-Secret Manager Admin, Storage Admin).
+After this refactor, delete obsolete Cloud Functions in the console if deploy warns about renames (`twilioWebhook`, `midnightRollover`, `reminders`).
 
 ---
 
 ## Scheduled jobs
 
-Declared with `onSchedule` and provisioned automatically (Cloud Scheduler +
-Pub/Sub) on deploy — no manual job creation:
+| Function | Schedule | Purpose |
+|----------|----------|---------|
+| `submissionCollector` | every 30 min | Ingest CF + LC accepted submissions |
+| `dailyProcessor` | `5 0 * * *` | Resolve previous day (bank/penalty) |
+| `reminderJob` | `0 23 * * *` | SMS if not solved today |
+| `dailySummaryJob` | `10 0 * * *` | Group results SMS |
+| `biweeklySummaryJob` | `0 9 * * *` | Leaderboard every 14 days |
 
-| Function           | Schedule (group timezone) | Purpose |
-|--------------------|---------------------------|---------|
-| `reminders`        | `0 23 * * *` (11 PM)       | Nudge users who haven't submitted today |
-| `midnightRollover` | `5 0 * * *` (12:05 AM)     | Resolve the previous day (bank/penalty) + send daily results SMS |
-| `biweeklySummary`  | `0 9 * * *` (daily, gated) | Send a leaderboard summary every 14 days |
-
-> The timezone for all schedules is the `TIMEZONE` param (default
-> `America/Toronto`). Per-group timezones are stored on each group and used for
-> computing a submission's "day".
+Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigning submission dates and midnight resolution.
 
 ---
 
-## Adding a new platform (e.g. AtCoder)
+## Migration from screenshot/OCR version
 
-1. Create `functions/src/platforms/atcoder.ts` implementing `PlatformDetector`.
-2. Register it in `functions/src/platforms/index.ts`'s `detectors` array.
-3. Add the literal to the `Platform` union in both `types.ts` files.
-
-No other code changes are required — detection, banking, history and the UI all
-work off the registry.
-
----
-
-## Notes & trade-offs
-
-- **OCR confidence:** screenshots without a clear "Accepted"/"OK" verdict are
-  marked `pending` for manual admin review rather than silently dropped.
-- **Duplicate detection** relies on extracting a problem identifier. If none is
-  found (e.g. a cropped screenshot), the problem is accepted but no history row
-  is written, so a later resubmission can't be auto-flagged — admins can reject.
-- **Cold starts:** the webhook downloads the English Tesseract traineddata into
-  `/tmp` on first use; it runs with 1 GiB memory and a 120 s timeout.
+- Remove Twilio **Messaging webhook** (no MMS ingestion).
+- Users must set **LeetCode username** and/or **Codeforces handle** in Profile.
+- Old `submissions` / `problemHistory` docs are not migrated; collector will repopulate new events going forward.
+- Redeploy functions so old schedulers are replaced.

@@ -1,7 +1,7 @@
 /** Helpers for composing the SMS summaries sent to a group. */
 import { db } from "./admin";
 import { Collections, DailyStatus, Group, User } from "../types";
-import { dailyStatusId } from "./game";
+import { dailyStatusId } from "../types";
 
 export async function getGroupMembers(groupId: string): Promise<User[]> {
   const snap = await db
@@ -52,7 +52,7 @@ export async function buildDailySummary(
         .doc(dailyStatusId(m.id, date))
         .get();
       const ds = dsSnap.data() as DailyStatus | undefined;
-      if (ds?.satisfied) return `${m.displayName} ✅`;
+      if (ds?.solvedToday) return `${m.displayName} ✅`;
       if (ds?.bankUsed) return `${m.displayName} 🏦 (banked)`;
       return `${m.displayName} ❌ (+2 words)`;
     })

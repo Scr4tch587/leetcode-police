@@ -36,9 +36,12 @@ export const bootstrapUser = onCall(opts, async (req) => {
     id: uid,
     displayName,
     phoneNumber: "",
+    leetcodeUsername: "",
+    codeforcesHandle: "",
     groupId: null,
     wordPenalty: 0,
     bankedProblems: 0,
+    lastProcessedTimestamp: 0,
     isAdmin: false,
     createdAt: FieldValue.serverTimestamp() as unknown as User["createdAt"],
   };
@@ -56,24 +59,37 @@ export const updateProfile = onCall(opts, async (req) => {
   }
 
   const phoneRaw = req.data?.phoneNumber as string | undefined;
-  if (typeof phoneRaw === "string" && phoneRaw.trim()) {
-    const phone = normalizePhone(phoneRaw);
-    if (!/^\+\d{8,15}$/.test(phone)) {
-      throw new HttpsError("invalid-argument", "Invalid phone number.");
+  if (typeof phoneRaw === "string") {
+    if (phoneRaw.trim()) {
+      const phone = normalizePhone(phoneRaw);
+      if (!/^\+\d{8,15}$/.test(phone)) {
+        throw new HttpsError("invalid-argument", "Invalid phone number.");
+      }
+      const dup = await db
+        .collection(Collections.users)
+        .where("phoneNumber", "==", phone)
+        .limit(1)
+        .get();
+      if (!dup.empty && dup.docs[0].id !== user.id) {
+        throw new HttpsError(
+          "already-exists",
+          "That phone number is already registered to another account."
+        );
+      }
+      updates.phoneNumber = phone;
+    } else {
+      updates.phoneNumber = "";
     }
-    // Enforce uniqueness across all users.
-    const dup = await db
-      .collection(Collections.users)
-      .where("phoneNumber", "==", phone)
-      .limit(1)
-      .get();
-    if (!dup.empty && dup.docs[0].id !== user.id) {
-      throw new HttpsError(
-        "already-exists",
-        "That phone number is already registered to another account."
-      );
-    }
-    updates.phoneNumber = phone;
+  }
+
+  const lc = req.data?.leetcodeUsername as string | undefined;
+  if (typeof lc === "string") {
+    updates.leetcodeUsername = lc.trim().slice(0, 40);
+  }
+
+  const cf = req.data?.codeforcesHandle as string | undefined;
+  if (typeof cf === "string") {
+    updates.codeforcesHandle = cf.trim().slice(0, 40);
   }
 
   if (Object.keys(updates).length > 0) {

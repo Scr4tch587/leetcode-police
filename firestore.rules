@@ -66,7 +66,7 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && request.auth.uid == userId
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName', 'phoneNumber'])
+             .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle'])
         // phone/displayName changes only; everything else must be unchanged.
         && request.resource.data.wordPenalty == resource.data.wordPenalty
         && request.resource.data.bankedProblems == resource.data.bankedProblems
@@ -90,13 +90,7 @@ service cloud.firestore {
     match /submissions/{submissionId} {
       // Any group member can read submissions belonging to their group.
       allow get, list: if isSignedIn() && sameGroup(resource.data.groupId);
-      // All writes happen through the Twilio webhook / admin Functions.
-      allow create, update, delete: if false;
-    }
-
-    // ---- problemHistory ----------------------------------------------------
-    match /problemHistory/{docId} {
-      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // All writes happen through Cloud Functions (submission collector).
       allow create, update, delete: if false;
     }
 

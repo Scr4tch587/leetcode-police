@@ -1,26 +1,14 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api";
-import {
-  useGroupMembers,
-  useGroupSubmissions,
-} from "../hooks/useGroupData";
-import { Card, PlatformBadge } from "../components/ui";
+import { useGroupMembers } from "../hooks/useGroupData";
+import { Card } from "../components/ui";
 
 export function Admin() {
-  const { profile, group } = useAuth();
-  const members = useGroupMembers(group?.id);
-  const submissions = useGroupSubmissions(group?.id, 200);
+  const { profile } = useAuth();
+  const members = useGroupMembers(profile?.groupId);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const nameOf = (uid: string) =>
-    members.find((m) => m.id === uid)?.displayName ?? uid.slice(0, 6);
-
-  const pending = useMemo(
-    () => submissions.filter((s) => s.validationStatus === "pending"),
-    [submissions]
-  );
 
   if (!profile?.isAdmin) {
     return <main className="container">Admins only.</main>;
@@ -43,85 +31,12 @@ export function Admin() {
       <h1>Admin panel</h1>
       {error && <p className="error">{error}</p>}
 
-      <Card title={`Pending review (${pending.length})`}>
-        <div className="grid-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Member</th>
-                <th>Platform</th>
-                <th>Problem</th>
-                <th>Note</th>
-                <th>Proof</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pending.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.date}</td>
-                  <td>{nameOf(s.userId)}</td>
-                  <td>
-                    <PlatformBadge platform={s.platform} />
-                  </td>
-                  <td>
-                    {s.problemIdentifier ?? "—"}
-                    {s.problemTitle ? ` · ${s.problemTitle}` : ""}
-                  </td>
-                  <td className="small muted">{s.reviewNote ?? ""}</td>
-                  <td>
-                    {s.screenshotUrl ? (
-                      <a href={s.screenshotUrl} target="_blank" rel="noreferrer">
-                        view
-                      </a>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="actions">
-                    <button
-                      className="btn-small btn-green"
-                      disabled={busyId === s.id}
-                      onClick={() =>
-                        void wrap(s.id, () =>
-                          api.approveSubmission({ submissionId: s.id })
-                        )
-                      }
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="btn-small btn-red"
-                      disabled={busyId === s.id}
-                      onClick={() =>
-                        void wrap(s.id, () =>
-                          api.rejectSubmission({ submissionId: s.id })
-                        )
-                      }
-                    >
-                      Reject
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {pending.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="muted">
-                    Nothing to review. 🎉
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
       <Card title="Manual adjustments">
         <table className="table">
           <thead>
             <tr>
               <th>Member</th>
+              <th>Handles</th>
               <th>Words</th>
               <th>Adjust words</th>
               <th>Banked</th>
@@ -132,6 +47,9 @@ export function Admin() {
             {members.map((m) => (
               <tr key={m.id}>
                 <td>{m.displayName}</td>
+                <td className="small muted">
+                  {m.leetcodeUsername || "—"} / {m.codeforcesHandle || "—"}
+                </td>
                 <td>{m.wordPenalty}</td>
                 <td className="actions">
                   <button

@@ -54,7 +54,8 @@ export function useGroupSubmissions(
 }
 
 export function useUserSubmissions(
-  userId: string | null | undefined
+  userId: string | null | undefined,
+  max = 50
 ): Submission[] {
   const [subs, setSubs] = useState<Submission[]>([]);
   useEffect(() => {
@@ -68,9 +69,13 @@ export function useUserSubmissions(
       orderBy("timestamp", "desc")
     );
     return onSnapshot(q, (snap) => {
-      setSubs(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Submission));
+      setSubs(
+        snap.docs
+          .slice(0, max)
+          .map((d) => ({ id: d.id, ...d.data() }) as Submission)
+      );
     });
-  }, [userId]);
+  }, [userId, max]);
   return subs;
 }
 

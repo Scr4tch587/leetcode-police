@@ -34,21 +34,3 @@ export const TWILIO_FROM_NUMBER = defineString("TWILIO_FROM_NUMBER", {
   description: "Twilio phone number that sends SMS, in E.164 format.",
 });
 
-/**
- * Cloud Storage bucket for screenshots. Leave empty to use the project's
- * default bucket; set it when using a dedicated bucket (e.g. one created in a
- * specific region).
- */
-export const STORAGE_BUCKET = defineString("STORAGE_BUCKET", {
-  default: "",
-  description: "GCS bucket name for screenshots (no gs:// prefix).",
-});
-
-/**
- * When true, the Twilio webhook validates the X-Twilio-Signature header.
- * Disable only for local emulator testing.
- */
-export const VALIDATE_TWILIO_SIGNATURE = defineString(
-  "VALIDATE_TWILIO_SIGNATURE",
-  { default: "true" }
-);

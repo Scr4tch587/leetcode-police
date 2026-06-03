@@ -1,24 +1,16 @@
 /**
  * Problem Club — Cloud Functions entry point.
- *
- * Re-exports every deployable function. The Firebase CLI provisions the
- * underlying infrastructure (HTTPS endpoints, Cloud Scheduler jobs, Pub/Sub
- * topics, Secret Manager bindings) automatically from these declarations.
  */
 import { setGlobalOptions } from "firebase-functions/v2";
 import { REGION } from "./config";
 
 setGlobalOptions({ region: REGION, maxInstances: 10 });
 
-// Inbound messaging
-export { twilioWebhook } from "./handlers/twilioWebhook";
-
-// Scheduled jobs
-export {
-  reminders,
-  midnightRollover,
-  biweeklySummary,
-} from "./handlers/scheduled";
+// Event ingestion & daily game loop
+export { submissionCollector } from "./submissionCollector";
+export { dailyProcessor } from "./dailyProcessor";
+export { reminderJob } from "./reminderJob";
+export { dailySummaryJob, biweeklySummaryJob } from "./summaryJob";
 
 // Account & group lifecycle (callable)
 export {
@@ -29,10 +21,5 @@ export {
   leaveGroup,
 } from "./handlers/account";
 
-// Admin actions (callable)
-export {
-  approveSubmission,
-  rejectSubmission,
-  adjustBank,
-  adjustPenalty,
-} from "./handlers/admin";
+// Admin adjustments (callable)
+export { adjustBank, adjustPenalty } from "./handlers/admin";

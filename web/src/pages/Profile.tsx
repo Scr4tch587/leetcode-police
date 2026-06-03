@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api";
-import { TWILIO_NUMBER } from "../firebase";
 import { Card } from "../components/ui";
 
 export function Profile() {
   const { profile, group } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [leetcodeUsername, setLeetcodeUsername] = useState("");
+  const [codeforcesHandle, setCodeforcesHandle] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +17,8 @@ export function Profile() {
     if (profile) {
       setDisplayName(profile.displayName);
       setPhoneNumber(profile.phoneNumber);
+      setLeetcodeUsername(profile.leetcodeUsername ?? "");
+      setCodeforcesHandle(profile.codeforcesHandle ?? "");
     }
   }, [profile]);
 
@@ -24,7 +27,12 @@ export function Profile() {
     setError(null);
     setMsg(null);
     try {
-      await api.updateProfile({ displayName, phoneNumber });
+      await api.updateProfile({
+        displayName,
+        phoneNumber,
+        leetcodeUsername,
+        codeforcesHandle,
+      });
       setMsg("Saved.");
     } catch (e) {
       setError((e as Error).message);
@@ -62,7 +70,27 @@ export function Profile() {
           />
         </label>
         <label>
-          Phone number (the number you'll text screenshots from)
+          LeetCode username
+          <input
+            value={leetcodeUsername}
+            onChange={(e) => setLeetcodeUsername(e.target.value)}
+            placeholder="e.g. johndoe"
+          />
+        </label>
+        <label>
+          Codeforces handle
+          <input
+            value={codeforcesHandle}
+            onChange={(e) => setCodeforcesHandle(e.target.value)}
+            placeholder="e.g. tourist"
+          />
+        </label>
+        <p className="muted small">
+          At least one handle is required for automatic submission tracking.
+          Accepted problems sync every ~30 minutes.
+        </p>
+        <label>
+          Phone number (optional — SMS reminders & summaries)
           <input
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
@@ -70,22 +98,21 @@ export function Profile() {
           />
         </label>
         <p className="muted small">
-          Use the same number you'll text from. Include country code (E.164).
+          E.164 format with country code. Leave blank to skip SMS.
         </p>
         <button className="btn-primary" disabled={busy} onClick={() => void save()}>
           Save
         </button>
       </Card>
 
-      <Card title="How to submit">
+      <Card title="How it works">
         <p>
-          Solve a new problem on LeetCode or Codeforces, then text a screenshot
-          of the <strong>Accepted</strong> result to{" "}
-          {TWILIO_NUMBER ? <strong>{TWILIO_NUMBER}</strong> : "your group's Twilio number"}.
+          Solve a <strong>new</strong> problem on LeetCode or Codeforces. The
+          backend polls your public profiles and records accepted submissions.
         </p>
         <p className="muted small">
-          The first valid problem each day satisfies the requirement; extras are
-          banked to cover future misses.
+          First new problem each day satisfies the requirement; extras are banked
+          at midnight. Missed days consume bank before adding penalty words.
         </p>
       </Card>
 

@@ -1,32 +1,24 @@
 /**
  * Shared domain types for the Problem Club backend.
  *
- * These mirror the Firestore data model. The same shapes are duplicated in
- * `web/src/types.ts` for the frontend. Keep the two in sync when changing the
- * schema.
+ * These mirror the Firestore data model. Keep in sync with `web/src/types.ts`.
  */
-
 import { Timestamp } from "firebase-admin/firestore";
 
-/** Supported competitive-programming platforms. */
-export type Platform = "leetcode" | "codeforces" | "unknown";
-
-/**
- * Lifecycle of a submission.
- *  - `accepted`        : auto-validated (OCR proved an accepted, new problem).
- *  - `pending`         : needs manual admin review (duplicate / low-confidence).
- *  - `rejected`        : an admin rejected it.
- *  - `failed`          : OCR could not find an "accepted" verdict.
- */
-export type ValidationStatus = "accepted" | "pending" | "rejected" | "failed";
+export type Platform = "leetcode" | "codeforces";
 
 export interface User {
   id: string;
   displayName: string;
-  phoneNumber: string; // E.164, e.g. +15195551234
+  /** E.164 — used only for SMS reminders/summaries. */
+  phoneNumber: string;
+  leetcodeUsername: string;
+  codeforcesHandle: string;
   groupId: string | null;
   wordPenalty: number;
   bankedProblems: number;
+  /** Latest platform submission timestamp we have ingested (seconds). */
+  lastProcessedTimestamp: number;
   isAdmin: boolean;
   createdAt: Timestamp;
 }
@@ -36,56 +28,47 @@ export interface Group {
   name: string;
   inviteCode: string;
   createdBy: string;
-  /** IANA timezone used for the daily cutoff & reminders, e.g. America/Toronto */
   timezone: string;
   createdAt: Timestamp;
 }
 
+/** Accepted submission event — source of truth for daily/banking logic. */
 export interface Submission {
   id: string;
   userId: string;
   groupId: string;
+  platform: Platform;
+  problemId: string;
+  problemName?: string;
   timestamp: Timestamp;
-  platform: Platform;
-  problemIdentifier: string | null;
-  problemTitle: string | null;
-  screenshotUrl: string;
-  validationStatus: ValidationStatus;
-  /** Local date string (YYYY-MM-DD) in the group's timezone. */
-  date: string;
-  /** Raw OCR text, kept for auditing / admin review. */
-  ocrText?: string;
-  /** Confidence 0..1 that the verdict was "accepted". */
-  ocrConfidence?: number;
-  /** Reason a submission is pending/failed (shown to admins). */
-  reviewNote?: string;
-}
-
-export interface ProblemHistory {
-  id: string; // `${userId}_${platform}_${problemIdentifier}`
-  userId: string;
-  platform: Platform;
-  problemIdentifier: string;
-  firstSubmissionDate: string;
+  uniqueKey: string;
 }
 
 export interface DailyStatus {
-  id: string; // `${userId}_${date}`
+  id: string;
   userId: string;
   groupId: string;
-  date: string; // YYYY-MM-DD
-  submissionCount: number;
-  satisfied: boolean;
+  date: string;
+  solvedToday: boolean;
   bankUsed: boolean;
   penaltyApplied: boolean;
+  submissionCount: number;
+  /** Set by the midnight job so re-runs are idempotent. */
+  resolved: boolean;
 }
 
-/** Firestore collection names, centralised to avoid typos. */
 export const Collections = {
   users: "users",
   groups: "groups",
   submissions: "submissions",
-  problemHistory: "problemHistory",
   dailyStatus: "dailyStatus",
   meta: "meta",
 } as const;
+
+export function submissionDocId(userId: string, uniqueKey: string): string {
+  return `${userId}_${uniqueKey}`;
+}
+
+export function dailyStatusId(userId: string, date: string): string {
+  return `${userId}_${date}`;
+}

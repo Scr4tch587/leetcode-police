@@ -284,6 +284,21 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.recent-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recent-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.recent-list li:last-child {
+  border-bottom: none;
+}
+
 /* ---- Tables ---- */
 .grid-scroll {
   overflow-x: auto;
