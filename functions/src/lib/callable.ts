@@ -1,7 +1,17 @@
 /** Shared helpers for callable (onCall) functions. */
 import { CallableRequest, HttpsError } from "firebase-functions/v2/https";
+import type { DocumentSnapshot } from "firebase-admin/firestore";
 import { db } from "./admin";
 import { Collections, User } from "../types";
+
+/** Firestore user docs may omit `id`; always set it from the document path. */
+export function userFromSnap(snap: DocumentSnapshot): User {
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "User not found.");
+  }
+  const data = snap.data() as Omit<User, "id">;
+  return { ...data, id: snap.id };
+}
 
 /** Resolve the authenticated caller's user document, or throw. */
 export async function requireUser(req: CallableRequest): Promise<User> {
@@ -15,7 +25,7 @@ export async function requireUser(req: CallableRequest): Promise<User> {
   if (!snap.exists) {
     throw new HttpsError("failed-precondition", "User profile not found.");
   }
-  return snap.data() as User;
+  return userFromSnap(snap);
 }
 
 /** Resolve the caller and assert they are an admin of their group. */

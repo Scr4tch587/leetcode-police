@@ -6,7 +6,7 @@ import * as logger from "firebase-functions/logger";
 import { db } from "../lib/admin";
 import { REGION } from "../config";
 import { Collections, User } from "../types";
-import { requireAdmin } from "../lib/callable";
+import { requireAdmin, requireUser, userFromSnap } from "../lib/callable";
 import { collectForUsers, formatGroupCheckDebug } from "../lib/collector";
 
 const opts = { region: REGION };
@@ -17,19 +17,31 @@ async function getGroupMembers(groupId: string): Promise<User[]> {
     .collection(Collections.users)
     .where("groupId", "==", groupId)
     .get();
-  return snap.docs.map((d) => d.data() as User);
+  return snap.docs.map((d) => userFromSnap(d));
 }
 
-/** Manually poll LeetCode/Codeforces for new submissions (admin only). */
+/**
+ * Poll LeetCode/Codeforces for new submissions.
+ * Any member may check themselves; admins may check one member or the whole group.
+ */
 export const runSubmissionCheck = onCall(collectOpts, async (req) => {
-  const admin = await requireAdmin(req);
-  const targetUserId = req.data?.userId as string | undefined;
+  const caller = await requireUser(req);
+  if (!caller.groupId) {
+    throw new HttpsError("failed-precondition", "Join a group first.");
+  }
 
+  const targetUserId = req.data?.userId as string | undefined;
   let targets: User[];
+
   if (targetUserId) {
-    const target = await assertSameGroupUser(admin, targetUserId);
-    targets = [target];
+    if (targetUserId === caller.id) {
+      targets = [caller];
+    } else {
+      const admin = await requireAdmin(req);
+      targets = [await assertSameGroupUser(admin, targetUserId)];
+    }
   } else {
+    const admin = await requireAdmin(req);
     targets = await getGroupMembers(admin.groupId!);
   }
 
@@ -37,8 +49,9 @@ export const runSubmissionCheck = onCall(collectOpts, async (req) => {
   const ingested = results.reduce((s, r) => s + r.ingested, 0);
 
   logger.info("Manual submission check", {
-    adminId: admin.id,
-    groupId: admin.groupId,
+    callerId: caller.id,
+    groupId: caller.groupId,
+    targetUserId: targetUserId ?? null,
     ingested,
     members: results.length,
   });
@@ -47,14 +60,12 @@ export const runSubmissionCheck = onCall(collectOpts, async (req) => {
     ok: true,
     ingested,
     message: formatGroupCheckDebug(results, ingested),
-    results,
   };
 });
 
 async function assertSameGroupUser(admin: User, userId: string): Promise<User> {
   const snap = await db.collection(Collections.users).doc(userId).get();
-  if (!snap.exists) throw new HttpsError("not-found", "User not found.");
-  const target = snap.data() as User;
+  const target = userFromSnap(snap);
   if (target.groupId !== admin.groupId) {
     throw new HttpsError("permission-denied", "User is not in your group.");
   }

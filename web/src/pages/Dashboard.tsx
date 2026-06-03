@@ -7,7 +7,7 @@ import {
   useGroupMembers,
   useUserSubmissions,
 } from "../hooks/useGroupData";
-import { manualCheckMessage } from "../lib/checkMessages";
+import { callableErrorMessage } from "../lib/callableError";
 import { getNextPunishmentDayInfo } from "../lib/punishmentCycle";
 import type { DailyStatus } from "../types";
 
@@ -91,10 +91,11 @@ export function Dashboard() {
     setCheckError(null);
     setCheckMsg(null);
     try {
-      const res = await api.runSelfSubmissionCheck({});
-      setCheckMsg(manualCheckMessage(res));
+      if (!profile?.id) throw new Error("Profile not loaded.");
+      const res = await api.runSubmissionCheck({ userId: profile.id });
+      setCheckMsg(res.message);
     } catch (e) {
-      setCheckError((e as Error).message);
+      setCheckError(callableErrorMessage(e));
     } finally {
       setCheckBusy(false);
     }

@@ -36,37 +36,12 @@ export const api = {
     { userId: string; delta: number },
     { ok: boolean; wordPenalty: number }
   >("adjustPenalty"),
-  runSelfSubmissionCheck: call<
-    Record<string, never>,
-    {
-      ok: boolean;
-      ingested: number;
-      message: string;
-      results: Array<{ debugMessage?: string }>;
-    }
-  >("runSelfSubmissionCheck"),
   runSubmissionCheck: call<
     { userId?: string },
     {
       ok: boolean;
       ingested: number;
       message: string;
-      results: Array<{
-        userId: string;
-        displayName: string;
-        ingested: number;
-        skipped: boolean;
-        skipReason?: string;
-        debugMessage?: string;
-        latestSeenByPlatform?: Array<{
-          platform: string;
-          problemId: string;
-          problemName?: string;
-          timestampSeconds: number;
-          localDate: string;
-          alreadyInDb: boolean;
-        }>;
-      }>;
     }
   >("runSubmissionCheck"),
 };

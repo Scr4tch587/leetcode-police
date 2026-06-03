@@ -19,7 +19,6 @@ export {
   createGroup,
   joinGroup,
   leaveGroup,
-  runSelfSubmissionCheck,
 } from "./handlers/account";
 
 // Admin adjustments (callable)

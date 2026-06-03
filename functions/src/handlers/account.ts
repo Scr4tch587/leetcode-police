@@ -6,10 +6,8 @@
  *   - createGroup   : create a group; caller becomes admin + member.
  *   - joinGroup     : join an existing group by invite code.
  *   - leaveGroup    : leave the current group.
- *   - runSelfSubmissionCheck : poll LC/CF for the caller only.
  */
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import * as logger from "firebase-functions/logger";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/admin";
 import { REGION, DEFAULT_TIMEZONE } from "../config";
@@ -19,10 +17,8 @@ import {
   normalizePhone,
   requireUser,
 } from "../lib/callable";
-import { collectForUsers, formatGroupCheckDebug } from "../lib/collector";
 
 const opts = { region: REGION };
-const collectOpts = { ...opts, memory: "512MiB" as const, timeoutSeconds: 120 };
 
 export const bootstrapUser = onCall(opts, async (req) => {
   if (!req.auth) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -173,25 +169,4 @@ export const leaveGroup = onCall(opts, async (req) => {
     isAdmin: false,
   });
   return { ok: true };
-});
-
-/** Poll LeetCode/Codeforces for the signed-in user (same logic as the cron). */
-export const runSelfSubmissionCheck = onCall(collectOpts, async (req) => {
-  const user = await requireUser(req);
-  if (!user.groupId) {
-    throw new HttpsError("failed-precondition", "Join a group first.");
-  }
-  const snap = await db.collection(Collections.users).doc(user.id).get();
-  const fresh = snap.data() as User;
-  const results = await collectForUsers([fresh], { includeLatestSeen: true });
-  const ingested = results.reduce((s, r) => s + r.ingested, 0);
-
-  logger.info("Self submission check", { userId: user.id, ingested });
-
-  return {
-    ok: true,
-    ingested,
-    message: formatGroupCheckDebug(results, ingested),
-    results,
-  };
 });
