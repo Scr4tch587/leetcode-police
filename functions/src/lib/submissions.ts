@@ -49,13 +49,9 @@ export async function ingestSubmission(
   const uk = uniqueKey(event.platform, event.problemId);
   const docId = submissionDocId(user.id, uk);
   const ref = db.collection(Collections.submissions).doc(docId);
-  const existing = await ref.get();
-  if (existing.exists) return false;
-
   const ts = Timestamp.fromMillis(event.timestampSeconds * 1000);
   const date = localDateString(new Date(event.timestampSeconds * 1000), timeZone);
 
-  // Firestore rejects undefined field values — omit optional fields.
   const submission: Submission = {
     id: docId,
     userId: user.id,
@@ -71,9 +67,11 @@ export async function ingestSubmission(
     .collection(Collections.dailyStatus)
     .doc(dailyStatusId(user.id, date));
 
-  await db.runTransaction(async (tx) => {
-    tx.set(ref, submission);
-    const dsSnap = await tx.get(dsRef);
+  const ingested = await db.runTransaction(async (tx) => {
+    // Firestore: all reads before any writes.
+    const [subSnap, dsSnap] = await Promise.all([tx.get(ref), tx.get(dsRef)]);
+    if (subSnap.exists) return false;
+
     const prev = dsSnap.data() as DailyStatus | undefined;
     const next: DailyStatus = {
       id: dsRef.id,
@@ -86,8 +84,13 @@ export async function ingestSubmission(
       submissionCount: (prev?.submissionCount ?? 0) + 1,
       resolved: prev?.resolved ?? false,
     };
+
+    tx.set(ref, submission);
     tx.set(dsRef, next, { merge: true });
+    return true;
   });
+
+  if (!ingested) return false;
 
   logger.info("Ingested submission", {
     userId: user.id,
