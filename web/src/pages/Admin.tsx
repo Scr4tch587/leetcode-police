@@ -255,7 +255,7 @@ export function Admin() {
                           onClick={() => {
                             if (
                               !confirm(
-                                `Grant ${m.displayName} solved-today status? No bank is added.`
+                                `Grant ${m.displayName} solved for today without a submission? Expires at 4 AM if they still have not solved. No bank is added.`
                               )
                             ) {
                               return;
@@ -285,7 +285,7 @@ export function Admin() {
                           onClick={() => {
                             if (
                               !confirm(
-                                `Nullify ${m.displayName}'s solved-today status? They will show as not solved until 4 AM (submissions stay in history). Extra bank from today is reversed.`
+                                `Nullify ${m.displayName}'s solved-today status until they solve again? (Submissions stay; a new solve or Refresh status restores solved.) Extra bank from today is reversed.`
                               )
                             ) {
                               return;

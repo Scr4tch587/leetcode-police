@@ -52,4 +52,5 @@ export interface DailyStatus {
   extrasBanked?: number;
   resolved?: boolean;
   adminVoidToday?: boolean;
+  adminGrantedToday?: boolean;
 }

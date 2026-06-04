@@ -10,6 +10,7 @@ import {
   fetchLatestAccepted,
 } from "../codeforcesClient";
 import { fetchRecentAccepted } from "../leetcodeScraper";
+import { liftVoidIfSubmissionsToday } from "./adminDailyStatus";
 import { reconcilePendingDays } from "./game";
 import { ingestSubmission, submissionExists, updateLastProcessed } from "./submissions";
 import { localDateString } from "./dates";
@@ -305,6 +306,8 @@ export async function collectForUser(
   if (ingested > 0 && maxNewTs > 0) {
     await updateLastProcessed(user.id, maxNewTs);
   }
+
+  await liftVoidIfSubmissionsToday(user, tz);
 
   // Backfill banking for historical days left unresolved (e.g. ingest after 4 AM cutoff).
   const reconciled = await reconcilePendingDays(user, tz);

@@ -197,6 +197,7 @@ export const nullifyTodaySolve = onCall(opts, async (req) => {
       date,
       solvedToday: false,
       adminVoidToday: true,
+      adminGrantedToday: false,
       bankUsed: prev?.bankUsed ?? false,
       penaltyApplied: prev?.penaltyApplied ?? false,
       submissionCount: prev?.submissionCount ?? 0,
@@ -247,8 +248,9 @@ export const grantTodaySolve = onCall(opts, async (req) => {
       userId,
       groupId,
       date,
-      solvedToday: true,
+      solvedToday: submissionCount >= 1,
       adminVoidToday: false,
+      adminGrantedToday: true,
       bankUsed: prev?.bankUsed ?? false,
       penaltyApplied: prev?.penaltyApplied ?? false,
       submissionCount,
@@ -260,6 +262,7 @@ export const grantTodaySolve = onCall(opts, async (req) => {
     return {
       alreadySolved: false,
       wasVoided: prev?.adminVoidToday ?? false,
+      grantOnly: submissionCount === 0,
     };
   });
 

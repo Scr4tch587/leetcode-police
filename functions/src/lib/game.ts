@@ -55,7 +55,8 @@ export async function resolveUserDay(
     const userData = userSnap.data() as User | undefined;
     const ds = dsSnap.data() as DailyStatus | undefined;
 
-    if (ds?.adminVoidToday) {
+    // Void without submissions still counts as unsolved; void + subs → solved.
+    if (ds?.adminVoidToday && count < 1) {
       count = 0;
     }
 
@@ -82,6 +83,8 @@ export async function resolveUserDay(
       submissionCount: count,
       extrasBanked: alreadyBanked,
       resolved: true,
+      adminVoidToday: false,
+      adminGrantedToday: false,
     };
 
     if (count >= 1) {
@@ -213,6 +216,7 @@ export async function reconcileTodayExtras(
       submissionCount: count,
       extrasBanked: alreadyBanked + credit,
       resolved: prev?.resolved ?? false,
+      adminGrantedToday: false,
     };
 
     if (credit > 0) {

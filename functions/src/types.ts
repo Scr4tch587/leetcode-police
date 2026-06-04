@@ -62,8 +62,10 @@ export interface DailyStatus {
   extrasBanked?: number;
   /** Set by the daily processor so re-runs are idempotent. */
   resolved: boolean;
-  /** Admin nullified today's solve; submissions may still exist in history. */
+  /** Admin nullified today until a new solve or sync finds today's submissions. */
   adminVoidToday?: boolean;
+  /** Admin granted solve without a submission; expires at 4 AM if still no solve. */
+  adminGrantedToday?: boolean;
 }
 
 export const Collections = {

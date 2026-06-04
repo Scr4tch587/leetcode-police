@@ -113,8 +113,10 @@ export async function ingestSubmission(
       userId: user.id,
       groupId: user.groupId!,
       date,
-      solvedToday: true,
+      // Only mark solved when this doc's game day has at least one submission.
+      solvedToday: newCount >= 1,
       adminVoidToday: false,
+      adminGrantedToday: false,
       bankUsed: prev?.bankUsed ?? false,
       penaltyApplied:
         newCount === 1 && prev?.penaltyApplied && prev?.resolved
