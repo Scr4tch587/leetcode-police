@@ -22,4 +22,12 @@ export {
 } from "./handlers/account";
 
 // Admin adjustments (callable)
-export { adjustBank, adjustPenalty, runSubmissionCheck } from "./handlers/admin";
+export {
+  adjustBank,
+  adjustScore,
+  adjustPenalty,
+  runSubmissionCheck,
+  updateGroupSettings,
+  nullifyTodaySolve,
+  grantTodaySolve,
+} from "./handlers/admin";

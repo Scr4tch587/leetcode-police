@@ -9,7 +9,9 @@ export interface User {
   leetcodeUsername: string;
   codeforcesHandle: string;
   groupId: string | null;
-  wordPenalty: number;
+  score: number;
+  /** @deprecated Legacy field — use score */
+  wordPenalty?: number;
   bankedProblems: number;
   lastProcessedTimestamp?: number;
   isAdmin: boolean;
@@ -23,6 +25,7 @@ export interface Group {
   createdBy: string;
   timezone: string;
   lastBiweeklyReset?: string | null;
+  scoreLabel?: string;
   createdAt: Timestamp | null;
 }
 
@@ -48,4 +51,5 @@ export interface DailyStatus {
   submissionCount: number;
   extrasBanked?: number;
   resolved?: boolean;
+  adminVoidToday?: boolean;
 }

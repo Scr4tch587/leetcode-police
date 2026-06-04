@@ -20,7 +20,7 @@ export const api = {
     { ok: boolean }
   >("updateProfile"),
   createGroup: call<
-    { name: string; timezone?: string },
+    { name: string; timezone?: string; scoreLabel: string },
     { groupId: string; inviteCode: string }
   >("createGroup"),
   joinGroup: call<
@@ -28,14 +28,31 @@ export const api = {
     { groupId: string; groupName: string }
   >("joinGroup"),
   leaveGroup: call<Record<string, never>, { ok: boolean }>("leaveGroup"),
+  updateGroupSettings: call<
+    { scoreLabel: string },
+    { ok: boolean; scoreLabel: string }
+  >("updateGroupSettings"),
   adjustBank: call<
     { userId: string; delta: number },
     { ok: boolean; bankedProblems: number }
   >("adjustBank"),
-  adjustPenalty: call<
+  adjustScore: call<
     { userId: string; delta: number },
-    { ok: boolean; wordPenalty: number }
-  >("adjustPenalty"),
+    { ok: boolean; score: number }
+  >("adjustScore"),
+  nullifyTodaySolve: call<
+    { userId: string },
+    { ok: boolean; date: string; alreadyVoid: boolean; extrasReversed: number }
+  >("nullifyTodaySolve"),
+  grantTodaySolve: call<
+    { userId: string },
+    {
+      ok: boolean;
+      date: string;
+      alreadySolved: boolean;
+      wasVoided: boolean;
+    }
+  >("grantTodaySolve"),
   runSubmissionCheck: call<
     { userId?: string },
     {

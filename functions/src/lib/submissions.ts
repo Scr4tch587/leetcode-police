@@ -4,7 +4,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
-import { PENALTY_WORDS_PER_MISS } from "./game";
+import { PENALTY_SCORE_PER_MISS } from "./game";
 import {
   Collections,
   DailyStatus,
@@ -87,8 +87,8 @@ export async function ingestSubmission(
     const userUpdates: Record<string, unknown> = {};
     const activeDay = isActiveGameDay(date, timeZone);
 
-    // 2nd+ problem today only → bank one (never for historical backfill dates).
-    if (activeDay && newCount >= 2) {
+    // 2nd+ problem today only → bank one (never while admin-voided or historical).
+    if (activeDay && newCount >= 2 && !prev?.adminVoidToday) {
       extrasBanked += 1;
       userUpdates.bankedProblems = FieldValue.increment(1);
     }
@@ -101,7 +101,7 @@ export async function ingestSubmission(
       prev.penaltyApplied &&
       !prev.solvedToday
     ) {
-      userUpdates.wordPenalty = FieldValue.increment(-PENALTY_WORDS_PER_MISS);
+      userUpdates.score = FieldValue.increment(-PENALTY_SCORE_PER_MISS);
     }
 
     if (Object.keys(userUpdates).length > 0) {
@@ -114,6 +114,7 @@ export async function ingestSubmission(
       groupId: user.groupId!,
       date,
       solvedToday: true,
+      adminVoidToday: false,
       bankUsed: prev?.bankUsed ?? false,
       penaltyApplied:
         newCount === 1 && prev?.penaltyApplied && prev?.resolved

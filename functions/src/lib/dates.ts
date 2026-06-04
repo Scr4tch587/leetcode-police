@@ -1,11 +1,29 @@
 /**
- * Timezone-aware date helpers. All "days" in LeetCode Police are computed in a
- * group's local timezone so the midnight cutoff is meaningful for the members.
+ * Timezone-aware game-day helpers.
+ * A "day" runs from 4:00 AM to 4:00 AM in the group's timezone (not midnight).
  */
 
-/** Return YYYY-MM-DD for `date` in the given IANA timezone. */
-export function localDateString(date: Date, timeZone: string): string {
-  // en-CA formats as YYYY-MM-DD.
+/** Hour (0–23) when a new game day starts in local time. */
+export const GAME_DAY_CUTOFF_HOUR = 4;
+
+function localParts(
+  date: Date,
+  timeZone: string
+): { hour: number; minute: number; second: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return { hour: get("hour"), minute: get("minute"), second: get("second") };
+}
+
+/** Calendar YYYY-MM-DD in the timezone (ignores 4 AM cutoff). */
+export function calendarDateString(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -14,26 +32,59 @@ export function localDateString(date: Date, timeZone: string): string {
   }).format(date);
 }
 
-/** Today's local date string. */
-export function today(timeZone: string): string {
-  return localDateString(new Date(), timeZone);
+/**
+ * Game-day id (YYYY-MM-DD). Before 4:00 AM local, still the previous game day.
+ */
+export function gameDateString(date: Date, timeZone: string): string {
+  const cal = calendarDateString(date, timeZone);
+  const { hour } = localParts(date, timeZone);
+  if (hour < GAME_DAY_CUTOFF_HOUR) {
+    return addDays(cal, -1);
+  }
+  return cal;
 }
 
-/** The local date string `n` days before `date`. */
+/** @deprecated Use gameDateString — kept as alias for game-day assignment. */
+export function localDateString(date: Date, timeZone: string): string {
+  return gameDateString(date, timeZone);
+}
+
+/** Current game day in the group timezone. */
+export function today(timeZone: string): string {
+  return gameDateString(new Date(), timeZone);
+}
+
+/** The game-day string `n` days before `dateStr`. */
 export function addDays(dateStr: string, n: number): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
+  const d = new Date(`${dateStr}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
 
-/** Inclusive list of date strings between two dates (chronological). */
+/** Inclusive list of game-day strings between two dates (chronological). */
 export function dateRange(startStr: string, endStr: string): string[] {
   const out: string[] = [];
   let cur = startStr;
-  // Guard against accidental infinite loops.
   for (let i = 0; i < 366 && cur <= endStr; i++) {
     out.push(cur);
     cur = addDays(cur, 1);
   }
   return out;
+}
+
+/** Ms until the next 4:00 AM cutoff in `timeZone`. */
+export function msUntilNextGameDayCutoff(
+  timeZone: string,
+  now = Date.now()
+): number {
+  const { hour, minute, second } = localParts(new Date(now), timeZone);
+  const msIntoHour = (minute * 60 + second) * 1000;
+  if (hour < GAME_DAY_CUTOFF_HOUR) {
+    return (
+      (GAME_DAY_CUTOFF_HOUR - hour) * 3600 * 1000 - msIntoHour
+    );
+  }
+  return (
+    (24 - hour + GAME_DAY_CUTOFF_HOUR) * 3600 * 1000 - msIntoHour
+  );
 }

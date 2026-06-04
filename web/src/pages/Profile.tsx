@@ -1,7 +1,21 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
-import { api } from "../api";
-import { Card } from "../components/ui";
+import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/api";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { groupScoreLabel } from "@/lib/groupScore";
 
 export function Profile() {
   const { profile, group } = useAuth();
@@ -26,6 +40,13 @@ export function Profile() {
     setBusy(true);
     setError(null);
     setMsg(null);
+    if (!leetcodeUsername.trim() && !codeforcesHandle.trim()) {
+      setError(
+        "At least one LeetCode username or Codeforces handle is required."
+      );
+      setBusy(false);
+      return;
+    }
     try {
       await api.updateProfile({
         displayName,
@@ -33,7 +54,7 @@ export function Profile() {
         leetcodeUsername,
         codeforcesHandle,
       });
-      setMsg("Saved.");
+      setMsg("Saved. Handles were verified on LeetCode / Codeforces.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -56,77 +77,102 @@ export function Profile() {
   };
 
   return (
-    <main className="container narrow">
-      <h1>Profile</h1>
-      {error && <p className="error">{error}</p>}
-      {msg && <p className="success">{msg}</p>}
+    <>
+      <PageHeader title="Profile" description="Handles are verified on save" />
 
-      <Card title="Your details">
-        <label>
-          Display name
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-        </label>
-        <label>
-          LeetCode username
-          <input
-            value={leetcodeUsername}
-            onChange={(e) => setLeetcodeUsername(e.target.value)}
-            placeholder="e.g. johndoe"
-          />
-        </label>
-        <label>
-          Codeforces handle
-          <input
-            value={codeforcesHandle}
-            onChange={(e) => setCodeforcesHandle(e.target.value)}
-            placeholder="e.g. tourist"
-          />
-        </label>
-        <p className="muted small">
-          At least one handle is required for automatic submission tracking.
-          Accepted problems sync every ~30 minutes.
-        </p>
-        <label>
-          Phone number (optional — SMS reminders & summaries)
-          <input
-            value={phoneNumber}
-            onChange={(e) => setPhoneNumber(e.target.value)}
-            placeholder="+15195551234"
-          />
-        </label>
-        <p className="muted small">
-          E.164 format with country code. Leave blank to skip SMS.
-        </p>
-        <button className="btn-primary" disabled={busy} onClick={() => void save()}>
-          Save
-        </button>
-      </Card>
-
-      <Card title="How it works">
-        <p>
-          Solve a <strong>new</strong> problem on LeetCode or Codeforces. The
-          backend polls your public profiles and records accepted submissions.
-        </p>
-        <p className="muted small">
-          First new problem each day satisfies the requirement; extras are banked
-          at midnight. Missed days consume bank before adding penalty words.
-        </p>
-      </Card>
-
-      {group && (
-        <Card title="Group">
-          <p>
-            You're in <strong>{group.name}</strong>. Invite code:{" "}
-            <code className="invite">{group.inviteCode}</code>
-          </p>
-          <button className="btn-danger" disabled={busy} onClick={() => void leave()}>
-            Leave group
-          </button>
-        </Card>
+      {error && (
+        <Alert variant="destructive" className="mb-4 max-w-lg">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
-    </main>
+      {msg && (
+        <Alert className="mb-4 max-w-lg border-primary/30 bg-accent/50">
+          <AlertDescription>{msg}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="mx-auto max-w-lg space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Your details</CardTitle>
+            <CardDescription>
+              At least one platform handle is required. We check that it exists
+              publicly before saving.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="displayName">Display name</Label>
+              <Input
+                id="displayName"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="leetcode">LeetCode username</Label>
+              <Input
+                id="leetcode"
+                value={leetcodeUsername}
+                onChange={(e) => setLeetcodeUsername(e.target.value)}
+                placeholder="johndoe"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="codeforces">Codeforces handle</Label>
+              <Input
+                id="codeforces"
+                value={codeforcesHandle}
+                onChange={(e) => setCodeforcesHandle(e.target.value)}
+                placeholder="tourist"
+              />
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone (optional)</Label>
+              <Input
+                id="phone"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+15195551234"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              E.164 format for SMS reminders and summaries.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button disabled={busy} onClick={() => void save()}>
+              Save & verify handles
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {group && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Group</CardTitle>
+              <CardDescription>
+                {group.name} · invite{" "}
+                <code className="rounded border border-primary/30 bg-accent px-1.5 py-0.5 font-mono text-primary">
+                  {group.inviteCode}
+                </code>
+                <br />
+                Score label: {groupScoreLabel(group)}
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Button
+                variant="destructive"
+                disabled={busy}
+                onClick={() => void leave()}
+              >
+                Leave group
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+      </div>
+    </>
   );
 }

@@ -1,7 +1,9 @@
 /**
- * Biweekly punishment cycle: tally word counts for the admin, then reset to 0.
+ * Biweekly punishment cycle: tally scores for the admin, then reset to 0.
  */
 import { db } from "./admin";
+import { groupScoreLabel } from "./groupScore";
+import { scoreOf } from "./userScore";
 import { Collections, Group, User } from "../types";
 
 const CYCLE_DAYS = 14;
@@ -30,27 +32,26 @@ function daysBetween(from: string, to: string): number {
   );
 }
 
-/** SMS body sent to group admin(s) before word counts are zeroed. */
+/** SMS body sent to group admin(s) before scores are zeroed. */
 export function buildPunishmentDayAdminSms(group: Group, members: User[]): string {
-  const leaderboard = [...members].sort(
-    (a, b) => a.wordPenalty - b.wordPenalty
-  );
+  const unit = groupScoreLabel(group);
+  const leaderboard = [...members].sort((a, b) => scoreOf(a) - scoreOf(b));
   const board = leaderboard.map(
-    (m, i) => `${i + 1}. ${m.displayName} — ${m.wordPenalty} words`
+    (m, i) => `${i + 1}. ${m.displayName} — ${scoreOf(m)} ${unit}`
   );
-  const total = members.reduce((s, m) => s + m.wordPenalty, 0);
+  const total = members.reduce((s, m) => s + scoreOf(m), 0);
 
   return [
     `🔔 ${group.name} — Punishment day`,
     "",
-    "Word counts this cycle (resetting to 0):",
+    `Scores this cycle (${unit}, resetting to 0):`,
     ...board,
     "",
-    `Total: ${total} words across ${members.length} member${members.length === 1 ? "" : "s"}.`,
+    `Total: ${total} across ${members.length} member${members.length === 1 ? "" : "s"}.`,
   ].join("\n");
 }
 
-/** Zero word penalties and stamp the group's last reset date. */
+/** Zero scores and stamp the group's last reset date. */
 export async function runBiweeklyPunishment(
   group: Group,
   date: string
@@ -62,7 +63,7 @@ export async function runBiweeklyPunishment(
 
   const batch = db.batch();
   for (const doc of members.docs) {
-    batch.update(doc.ref, { wordPenalty: 0 });
+    batch.update(doc.ref, { score: 0, wordPenalty: 0 });
   }
   batch.update(db.collection(Collections.groups).doc(group.id), {
     lastBiweeklyReset: date,

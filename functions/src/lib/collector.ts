@@ -306,7 +306,7 @@ export async function collectForUser(
     await updateLastProcessed(user.id, maxNewTs);
   }
 
-  // Backfill banking for historical days left unresolved (e.g. ingest after midnight).
+  // Backfill banking for historical days left unresolved (e.g. ingest after 4 AM cutoff).
   const reconciled = await reconcilePendingDays(user, tz);
   if (reconciled.length > 0) {
     logger.info("Reconciled pending days after collect", {

@@ -3,7 +3,7 @@
 A fully serverless web app for a group of friends who commit to solving **one
 new LeetCode or Codeforces problem per day**. Accepted submissions are ingested
 automatically from public platform APIs; the system tracks events, applies
-banking and penalties at midnight, and sends optional SMS reminders and summaries.
+banking and penalties at the 4 AM game-day cutoff, and sends optional SMS reminders and summaries.
 
 - **Frontend:** React + TypeScript + Vite → GitHub Pages
 - **Backend:** Firebase Cloud Functions (2nd gen), Firestore, Cloud Scheduler
@@ -17,7 +17,7 @@ banking and penalties at midnight, and sends optional SMS reminders and summarie
 
 - Each day, every user must complete **one new problem** (unique per user lifetime).
 - The **submission collector** runs every 30 minutes and records new accepted submissions.
-- At **midnight** (group timezone):
+- At **4:00 AM** (group timezone; the game “day” rolls then, not at midnight):
   - **1+ submissions that day** → day complete; extras add to `bankedProblems` (`count - 1`).
   - **0 submissions** and **bank > 0** → consume one bank (no penalty).
   - **0 submissions** and **no bank** → **+2 penalty words**.
@@ -37,7 +37,7 @@ See [`docs/banking.md`](docs/banking.md) for a worked example.
 ├── functions/src/
 │   ├── index.ts
 │   ├── submissionCollector.ts   # poll LC + CF every 30 min
-│   ├── dailyProcessor.ts          # midnight bank/penalty
+│   ├── dailyProcessor.ts          # 4:05 AM bank/penalty
 │   ├── reminderJob.ts             # 11 PM SMS
 │   ├── summaryJob.ts              # daily + biweekly SMS
 │   ├── leetcodeScraper.ts
@@ -154,7 +154,7 @@ After this refactor, delete obsolete Cloud Functions in the console if deploy wa
 | `dailySummaryJob` | `10 0 * * *` | Group results SMS |
 | `biweeklySummaryJob` | `0 9 * * *` | Punishment day every 14 days: SMS admin word tallies, reset all counts |
 
-Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigning submission dates and midnight resolution.
+Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigning submission dates and game-day resolution (day rolls at 4:00 AM local).
 
 ---
 

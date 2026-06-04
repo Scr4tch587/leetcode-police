@@ -57,7 +57,7 @@ service cloud.firestore {
       // bootstrap (only for their own uid and with no admin/penalty fields set).
       allow create: if isSignedIn()
         && request.auth.uid == userId
-        && request.resource.data.wordPenalty == 0
+        && request.resource.data.score == 0
         && request.resource.data.bankedProblems == 0
         && request.resource.data.isAdmin == false;
 
@@ -68,7 +68,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle'])
         // phone/displayName changes only; everything else must be unchanged.
-        && request.resource.data.wordPenalty == resource.data.wordPenalty
+        && request.resource.data.score == resource.data.score
         && request.resource.data.bankedProblems == resource.data.bankedProblems
         && request.resource.data.isAdmin == resource.data.isAdmin
         && request.resource.data.groupId == resource.data.groupId;

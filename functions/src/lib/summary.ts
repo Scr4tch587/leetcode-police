@@ -1,19 +1,30 @@
 /** Helpers for composing the SMS summaries sent to a group. */
 import { db } from "./admin";
+import { userFromSnap } from "./callable";
+import { groupScoreLabel } from "./groupScore";
+import { scoreOf } from "./userScore";
 import { Collections, DailyStatus, Group, User } from "../types";
 import { dailyStatusId } from "../types";
+import { effectiveSolvedToday } from "./dailyStatus";
+import { PENALTY_SCORE_PER_MISS } from "./game";
 
 export async function getGroupMembers(groupId: string): Promise<User[]> {
   const snap = await db
     .collection(Collections.users)
     .where("groupId", "==", groupId)
     .get();
-  return snap.docs.map((d) => d.data() as User);
+  return snap.docs.map((d) => userFromSnap(d));
 }
 
 export async function getAllGroups(): Promise<Group[]> {
   const snap = await db.collection(Collections.groups).get();
-  return snap.docs.map((d) => d.data() as Group);
+  return snap.docs.map((d) => {
+    const data = d.data() as Group;
+    return {
+      ...data,
+      scoreLabel: data.scoreLabel?.trim() || "score",
+    };
+  });
 }
 
 /** Format a YYYY-MM-DD date as e.g. "June 2" in the group timezone. */
@@ -25,23 +36,11 @@ export function humanDate(dateStr: string, timeZone: string): string {
   }).format(new Date(`${dateStr}T12:00:00Z`));
 }
 
-/** Build the daily results SMS, e.g.:
- *
- *   June 2 Results
- *
- *   Kai ✅
- *   John ❌ (+2 words)
- *
- *   Current Totals
- *   Kai: 4 words
- *
- *   Banked Problems
- *   Kai: 1
- */
 export async function buildDailySummary(
   group: Group,
   date: string
 ): Promise<string> {
+  const unit = groupScoreLabel(group);
   const members = await getGroupMembers(group.id);
   members.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
@@ -52,13 +51,15 @@ export async function buildDailySummary(
         .doc(dailyStatusId(m.id, date))
         .get();
       const ds = dsSnap.data() as DailyStatus | undefined;
-      if (ds?.solvedToday) return `${m.displayName} ✅`;
+      if (effectiveSolvedToday(ds)) return `${m.displayName} ✅`;
       if (ds?.bankUsed) return `${m.displayName} 🏦 (banked)`;
-      return `${m.displayName} ❌ (+2 words)`;
+      return `${m.displayName} ❌ (+${PENALTY_SCORE_PER_MISS} ${unit})`;
     })
   );
 
-  const totals = members.map((m) => `${m.displayName}: ${m.wordPenalty} words`);
+  const totals = members.map(
+    (m) => `${m.displayName}: ${scoreOf(m)} ${unit}`
+  );
   const banks = members.map((m) => `${m.displayName}: ${m.bankedProblems}`);
 
   return [
@@ -66,11 +67,10 @@ export async function buildDailySummary(
     "",
     ...statusLines,
     "",
-    "Current Totals",
+    "Current totals",
     ...totals,
     "",
-    "Banked Problems",
+    "Banked problems",
     ...banks,
   ].join("\n");
 }
-

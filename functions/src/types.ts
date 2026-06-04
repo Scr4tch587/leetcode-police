@@ -15,7 +15,8 @@ export interface User {
   leetcodeUsername: string;
   codeforcesHandle: string;
   groupId: string | null;
-  wordPenalty: number;
+  /** Penalty tally for the current cycle (legacy field: wordPenalty). */
+  score: number;
   bankedProblems: number;
   /** Latest platform submission timestamp we have ingested (seconds). */
   lastProcessedTimestamp: number;
@@ -29,8 +30,10 @@ export interface Group {
   inviteCode: string;
   createdBy: string;
   timezone: string;
-  /** YYYY-MM-DD (group timezone) when word counts were last reset on punishment day. */
+  /** YYYY-MM-DD (group timezone) when scores were last reset on punishment day. */
   lastBiweeklyReset?: string | null;
+  /** Admin-defined label for what +score means, e.g. "push-ups owed". */
+  scoreLabel?: string;
   createdAt: Timestamp;
 }
 
@@ -57,8 +60,10 @@ export interface DailyStatus {
   submissionCount: number;
   /** Extra problems already converted to bank for this day (0..count-1). */
   extrasBanked?: number;
-  /** Set by the midnight job so re-runs are idempotent. */
+  /** Set by the daily processor so re-runs are idempotent. */
   resolved: boolean;
+  /** Admin nullified today's solve; submissions may still exist in history. */
+  adminVoidToday?: boolean;
 }
 
 export const Collections = {

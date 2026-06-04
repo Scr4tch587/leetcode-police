@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -6,6 +7,9 @@ import react from "@vitejs/plugin-react";
 // Locally it defaults to "/".
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: { "@": path.resolve(__dirname, "./src") },
+  },
   base: process.env.VITE_BASE || "/",
   build: {
     outDir: "dist",

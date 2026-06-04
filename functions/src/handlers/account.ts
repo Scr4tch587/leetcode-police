@@ -1,11 +1,5 @@
 /**
  * Account & group lifecycle callable functions.
- *
- *   - bootstrapUser : idempotently create the caller's user document.
- *   - updateProfile : set displayName / phoneNumber (validated, unique phone).
- *   - createGroup   : create a group; caller becomes admin + member.
- *   - joinGroup     : join an existing group by invite code.
- *   - leaveGroup    : leave the current group.
  */
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
@@ -17,8 +11,20 @@ import {
   normalizePhone,
   requireUser,
 } from "../lib/callable";
+import { verifyAtLeastOneHandle } from "../lib/handleVerify";
 
 const opts = { region: REGION };
+
+function normalizeScoreLabel(raw: string): string {
+  const label = raw.trim().slice(0, 120);
+  if (label.length < 3) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Score label must be at least 3 characters (e.g. push-ups owed)."
+    );
+  }
+  return label;
+}
 
 export const bootstrapUser = onCall(opts, async (req) => {
   if (!req.auth) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -39,19 +45,19 @@ export const bootstrapUser = onCall(opts, async (req) => {
     leetcodeUsername: "",
     codeforcesHandle: "",
     groupId: null,
-    wordPenalty: 0,
+    score: 0,
     bankedProblems: 0,
     lastProcessedTimestamp: 0,
     isAdmin: false,
     createdAt: FieldValue.serverTimestamp() as unknown as User["createdAt"],
   };
-  await ref.set(user);
+  await ref.set({ ...user, wordPenalty: 0 });
   return { created: true, user };
 });
 
 export const updateProfile = onCall(opts, async (req) => {
   const user = await requireUser(req);
-  const updates: Partial<User> = {};
+  const updates: Partial<User> & { wordPenalty?: number } = {};
 
   const displayName = req.data?.displayName as string | undefined;
   if (typeof displayName === "string" && displayName.trim()) {
@@ -82,20 +88,29 @@ export const updateProfile = onCall(opts, async (req) => {
     }
   }
 
-  const lc = req.data?.leetcodeUsername as string | undefined;
-  if (typeof lc === "string") {
-    updates.leetcodeUsername = lc.trim().slice(0, 40);
-  }
+  const nextLc =
+    typeof req.data?.leetcodeUsername === "string"
+      ? req.data.leetcodeUsername.trim().slice(0, 40)
+      : user.leetcodeUsername;
+  const nextCf =
+    typeof req.data?.codeforcesHandle === "string"
+      ? req.data.codeforcesHandle.trim().slice(0, 40)
+      : user.codeforcesHandle;
 
-  const cf = req.data?.codeforcesHandle as string | undefined;
-  if (typeof cf === "string") {
-    updates.codeforcesHandle = cf.trim().slice(0, 40);
+  const handlesTouched =
+    typeof req.data?.leetcodeUsername === "string" ||
+    typeof req.data?.codeforcesHandle === "string";
+
+  if (handlesTouched) {
+    await verifyAtLeastOneHandle(nextLc, nextCf);
+    updates.leetcodeUsername = nextLc;
+    updates.codeforcesHandle = nextCf;
   }
 
   if (Object.keys(updates).length > 0) {
     await db.collection(Collections.users).doc(user.id).update(updates);
   }
-  return { ok: true, updates };
+  return { ok: true };
 });
 
 export const createGroup = onCall(opts, async (req) => {
@@ -105,6 +120,15 @@ export const createGroup = onCall(opts, async (req) => {
   }
   const name = (req.data?.name as string | undefined)?.trim();
   if (!name) throw new HttpsError("invalid-argument", "Group name required.");
+
+  const scoreLabelRaw = req.data?.scoreLabel as string | undefined;
+  if (!scoreLabelRaw?.trim()) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Score label is required — describe what a penalty means for your group."
+    );
+  }
+  const scoreLabel = normalizeScoreLabel(scoreLabelRaw);
 
   const timezone =
     (req.data?.timezone as string | undefined) || DEFAULT_TIMEZONE.value();
@@ -118,6 +142,7 @@ export const createGroup = onCall(opts, async (req) => {
     inviteCode,
     createdBy: user.id,
     timezone,
+    scoreLabel,
     createdAt: FieldValue.serverTimestamp() as unknown as Group["createdAt"],
   };
 
@@ -137,6 +162,16 @@ export const joinGroup = onCall(opts, async (req) => {
   if (user.groupId) {
     throw new HttpsError("failed-precondition", "You're already in a group.");
   }
+
+  const lc = user.leetcodeUsername?.trim() ?? "";
+  const cf = user.codeforcesHandle?.trim() ?? "";
+  if (!lc && !cf) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Add and save at least one verified LeetCode or Codeforces handle in Profile before joining a group."
+    );
+  }
+
   const code = (req.data?.inviteCode as string | undefined)
     ?.trim()
     .toUpperCase();

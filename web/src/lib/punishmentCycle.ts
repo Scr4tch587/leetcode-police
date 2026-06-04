@@ -48,14 +48,21 @@ export type PunishmentCycleInfo = {
   countdown?: string;
 };
 
-/** Next biweekly punishment: word reset + admin SMS tally. */
+/** Next biweekly punishment: score reset + admin SMS tally. */
 export function getNextPunishmentDayInfo(params: {
   timeZone: string;
+  scoreLabel: string;
   lastBiweeklyReset?: string | null;
   groupCreatedAt?: Timestamp | null;
-  currentWords: number;
+  currentScore: number;
 }): PunishmentCycleInfo {
-  const { timeZone, lastBiweeklyReset, groupCreatedAt, currentWords } = params;
+  const {
+    timeZone,
+    scoreLabel,
+    lastBiweeklyReset,
+    groupCreatedAt,
+    currentScore,
+  } = params;
   const today = localDateString(timeZone);
   const anchor =
     lastBiweeklyReset ??
@@ -76,7 +83,7 @@ export function getNextPunishmentDayInfo(params: {
 
   return {
     headline: "Next punishment day",
-    detail: `${when} at 9 AM (${timeZone}): everyone's word counts reset to 0 and the group admin gets an SMS with each member's tally. You have ${currentWords} word${currentWords === 1 ? "" : "s"} this cycle.`,
+    detail: `${when} at 9 AM: scores reset to 0 and the admin gets a tally (${scoreLabel}). You have ${currentScore} this cycle.`,
     countdown,
   };
 }

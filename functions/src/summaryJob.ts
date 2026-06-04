@@ -1,5 +1,5 @@
 /**
- * Daily summary (after midnight processing) and biweekly punishment day.
+ * Daily summary (after 4 AM game-day processing) and biweekly punishment day.
  */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
@@ -27,9 +27,9 @@ const scheduleOpts = {
   memory: "256MiB" as const,
 };
 
-/** 12:10 AM — send yesterday's results after dailyProcessor (00:05). */
+/** 4:10 AM — send yesterday's results after dailyProcessor (4:05). */
 export const dailySummaryJob = onSchedule(
-  { ...scheduleOpts, schedule: "10 0 * * *" },
+  { ...scheduleOpts, schedule: "10 4 * * *" },
   async () => {
     const tz = DEFAULT_TIMEZONE.value();
     const date = addDays(today(tz), -1);

@@ -8,7 +8,16 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { userScore } from "@/lib/userScore";
 import type { DailyStatus, Submission, User } from "../types";
+
+function mapUser(id: string, data: Record<string, unknown>): User {
+  const u = { id, ...data } as User;
+  return {
+    ...u,
+    score: userScore(u),
+  };
+}
 
 export function useGroupMembers(groupId: string | null | undefined): User[] {
   const [members, setMembers] = useState<User[]>([]);
@@ -21,8 +30,8 @@ export function useGroupMembers(groupId: string | null | undefined): User[] {
     return onSnapshot(q, (snap) => {
       setMembers(
         snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }) as User)
-          .sort((a, b) => a.wordPenalty - b.wordPenalty)
+          .map((d) => mapUser(d.id, d.data() as Record<string, unknown>))
+          .sort((a, b) => userScore(a) - userScore(b))
       );
     });
   }, [groupId]);

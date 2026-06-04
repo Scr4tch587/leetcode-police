@@ -1,5 +1,5 @@
 /**
- * Daily resolution: banking, penalties, idempotent per calendar day.
+ * Daily resolution: banking, penalties, idempotent per game day (4 AM cutoff).
  */
 import { FieldValue } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
@@ -13,7 +13,7 @@ import {
 import { countSubmissionsForDay } from "./submissions";
 import { addDays, today } from "./dates";
 
-export const PENALTY_WORDS_PER_MISS = 2;
+export const PENALTY_SCORE_PER_MISS = 2;
 
 export interface MidnightOutcome {
   userId: string;
@@ -28,7 +28,7 @@ function extrasToBank(count: number, alreadyBanked: number): number {
 }
 
 /**
- * Resolve one calendar day for ongoing play (yesterday at midnight, or yesterday catch-up).
+ * Resolve one game day for ongoing play (yesterday after 4 AM cutoff, or catch-up).
  */
 export async function resolveUserDay(
   user: Pick<User, "id" | "groupId">,
@@ -39,7 +39,7 @@ export async function resolveUserDay(
     return { userId: user.id, date, status: "skipped" };
   }
 
-  const count = await countSubmissionsForDay(user.id, date, timeZone);
+  let count = await countSubmissionsForDay(user.id, date, timeZone);
 
   return db.runTransaction(async (tx) => {
     const userRef = db.collection(Collections.users).doc(user.id);
@@ -54,6 +54,10 @@ export async function resolveUserDay(
 
     const userData = userSnap.data() as User | undefined;
     const ds = dsSnap.data() as DailyStatus | undefined;
+
+    if (ds?.adminVoidToday) {
+      count = 0;
+    }
 
     if (ds?.resolved) {
       return {
@@ -103,7 +107,7 @@ export async function resolveUserDay(
     }
 
     tx.update(userRef, {
-      wordPenalty: FieldValue.increment(PENALTY_WORDS_PER_MISS),
+      score: FieldValue.increment(PENALTY_SCORE_PER_MISS),
     });
     tx.set(dsRef, { ...base, penaltyApplied: true }, { merge: true });
     return { userId: user.id, date, status: "penalty" as const };
@@ -190,6 +194,11 @@ export async function reconcileTodayExtras(
 
     const dsSnap = await tx.get(dsRef);
     const prev = dsSnap.data() as DailyStatus | undefined;
+
+    if (prev?.adminVoidToday) {
+      return null;
+    }
+
     const alreadyBanked = prev?.extrasBanked ?? 0;
     const credit = extrasToBank(count, alreadyBanked);
 

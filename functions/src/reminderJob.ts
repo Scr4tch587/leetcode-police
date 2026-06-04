@@ -5,6 +5,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
 import { REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
+import { effectiveSolvedToday } from "./lib/dailyStatus";
 import { Collections, DailyStatus, User, dailyStatusId } from "./types";
 import { today } from "./lib/dates";
 import { sendSms } from "./lib/twilio";
@@ -40,11 +41,11 @@ export const reminderJob = onSchedule(
           .doc(dailyStatusId(u.id, date))
           .get();
         const ds = dsSnap.data() as DailyStatus | undefined;
-        if (ds?.solvedToday) return;
+        if (effectiveSolvedToday(ds)) return;
 
         await sendSms(
           u.phoneNumber,
-          "⏰ LeetCode Police: solve one new problem before midnight (LeetCode or Codeforces)."
+          "⏰ LeetCode Police: solve one new problem before 4 AM (LeetCode or Codeforces)."
         );
         sent++;
       })

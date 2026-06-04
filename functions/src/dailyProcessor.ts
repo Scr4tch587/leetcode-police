@@ -1,5 +1,5 @@
 /**
- * Midnight job — resolve the previous calendar day (bank / penalty / extras).
+ * Runs after the 4 AM game-day cutoff — resolve the previous game day (bank / penalty / extras).
  */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
@@ -29,7 +29,7 @@ async function getGroupTimezone(groupId: string): Promise<string> {
 }
 
 export const dailyProcessor = onSchedule(
-  { ...scheduleOpts, schedule: "5 0 * * *" },
+  { ...scheduleOpts, schedule: "5 4 * * *" },
   async () => {
     const users = await getActiveUsers();
 

@@ -23,6 +23,8 @@ import {
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db, googleProvider } from "../firebase";
 import { api } from "../api";
+import { groupScoreLabel } from "@/lib/groupScore";
+import { userScore } from "@/lib/userScore";
 import type { Group, User } from "../types";
 
 interface AuthState {
@@ -69,7 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onSnapshot(
       ref,
       (snap) => {
-        setProfile(snap.exists() ? ({ id: snap.id, ...snap.data() } as User) : null);
+        if (!snap.exists()) {
+          setProfile(null);
+        } else {
+          const raw = { id: snap.id, ...snap.data() } as User;
+          setProfile({ ...raw, score: userScore(raw) });
+        }
         setLoading(false);
       },
       (err) => {
@@ -87,7 +94,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const ref = doc(db, "groups", profile.groupId);
     return onSnapshot(ref, (snap) => {
-      setGroup(snap.exists() ? ({ id: snap.id, ...snap.data() } as Group) : null);
+      if (!snap.exists()) {
+        setGroup(null);
+      } else {
+        const raw = { id: snap.id, ...snap.data() } as Group;
+        setGroup({ ...raw, scoreLabel: groupScoreLabel(raw) });
+      }
     });
   }, [profile?.groupId]);
 
