@@ -149,12 +149,12 @@ After this refactor, delete obsolete Cloud Functions in the console if deploy wa
 | Function | Schedule | Purpose |
 |----------|----------|---------|
 | `submissionCollector` | every 30 min | Ingest CF + LC accepted submissions |
-| `dailyProcessor` | `5 0 * * *` | Resolve previous day (bank/penalty) |
+| `dailyProcessor` | `5 * * * *` (UTC) | Resolve previous game day at each group’s **4:00 AM** local |
 | `reminderJob` | `0 23 * * *` | SMS if not solved today |
-| `dailySummaryJob` | `10 0 * * *` | Group results SMS |
+| `dailySummaryJob` | `10 * * * *` (UTC) | Group results SMS after 4 AM close |
 | `biweeklySummaryJob` | `0 9 * * *` | Punishment day every 14 days: SMS admin word tallies, reset all counts |
 
-Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigning submission dates and game-day resolution (day rolls at 4:00 AM local).
+`dailyProcessor` / `dailySummaryJob` run every hour on UTC and only act when a group’s local time is in the **4:00 hour**. Other jobs use the `TIMEZONE` param for cron. Per-group `timezone` is used for submission dates and game-day resolution (day rolls at 4:00 AM local).
 
 ---
 

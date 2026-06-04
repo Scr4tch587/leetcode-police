@@ -10,16 +10,32 @@ function localParts(
   date: Date,
   timeZone: string
 ): { hour: number; minute: number; second: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone,
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).formatToParts(date);
   const get = (type: string) =>
     Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return { hour: get("hour"), minute: get("minute"), second: get("second") };
+  const hourRaw = get("hour");
+  const hour = hourRaw === 24 ? 0 : hourRaw % 24;
+  return { hour, minute: get("minute"), second: get("second") };
+}
+
+/** True during the 4:00 local hour — when the previous game day should close. */
+export function isGameDayCloseHour(timeZone: string, now = new Date()): boolean {
+  return localParts(now, timeZone).hour === GAME_DAY_CUTOFF_HOUR;
+}
+
+/** Game day that just ended (only valid during the close hour). */
+export function gameDayJustClosed(
+  timeZone: string,
+  now = new Date()
+): string | null {
+  if (!isGameDayCloseHour(timeZone, now)) return null;
+  return addDays(gameDateString(now, timeZone), -1);
 }
 
 /** Calendar YYYY-MM-DD in the timezone (ignores 4 AM cutoff). */

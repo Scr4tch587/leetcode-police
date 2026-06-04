@@ -1,10 +1,19 @@
 import { msUntilNextGameDayCutoff } from "@/lib/gameDay";
 
-export function msUntilEndOfCalendarDay(
+/** Ms until the next 4:00 AM game-day cutoff (not calendar midnight). */
+export function msUntilNextGameDayCutoffMs(
   timeZone: string,
   now = Date.now()
 ): number {
   return msUntilNextGameDayCutoff(timeZone, now);
+}
+
+/** @deprecated Alias — counts down to 4 AM, not midnight. */
+export function msUntilEndOfCalendarDay(
+  timeZone: string,
+  now = Date.now()
+): number {
+  return msUntilNextGameDayCutoffMs(timeZone, now);
 }
 
 function pad2(n: number): string {

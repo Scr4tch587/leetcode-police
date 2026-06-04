@@ -1,17 +1,19 @@
 /**
- * Runs after the 4 AM game-day cutoff — resolve the previous game day (bank / penalty / extras).
+ * After each group's 4 AM cutoff — resolve the previous game day (bank / penalty / extras).
+ * Runs hourly (UTC); only processes groups in their local 4:00 hour.
  */
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
 import { REGION, DEFAULT_TIMEZONE } from "./config";
 import { Collections, Group, User } from "./types";
-import { addDays, today } from "./lib/dates";
+import { gameDayJustClosed } from "./lib/dates";
 import { resolveUserDay } from "./lib/game";
 
 const scheduleOpts = {
   region: REGION,
-  timeZone: DEFAULT_TIMEZONE,
+  /** Cron is UTC; per-group timezone checked in code. */
+  timeZone: "UTC",
   memory: "256MiB" as const,
 };
 
@@ -29,26 +31,33 @@ async function getGroupTimezone(groupId: string): Promise<string> {
 }
 
 export const dailyProcessor = onSchedule(
-  { ...scheduleOpts, schedule: "5 4 * * *" },
+  { ...scheduleOpts, schedule: "5 * * * *" },
   async () => {
+    const now = new Date();
     const users = await getActiveUsers();
 
     const outcomes = await Promise.all(
       users.map(async (u) => {
-        const gtz = u.groupId
-          ? await getGroupTimezone(u.groupId)
-          : DEFAULT_TIMEZONE.value();
-        const date = addDays(today(gtz), -1);
+        if (!u.groupId) {
+          return { userId: u.id, status: "skipped" as const };
+        }
+        const gtz = await getGroupTimezone(u.groupId);
+        const date = gameDayJustClosed(gtz, now);
+        if (!date) {
+          return { userId: u.id, status: "skipped" as const };
+        }
         return resolveUserDay(u, date, gtz);
       })
     );
 
+    const processed = outcomes.filter((o) => o.status !== "skipped");
+
     logger.info("Daily processor finished", {
       users: users.length,
-      solved: outcomes.filter((o) => o.status === "solved").length,
-      bankUsed: outcomes.filter((o) => o.status === "bankUsed").length,
-      penalty: outcomes.filter((o) => o.status === "penalty").length,
-      skipped: outcomes.filter((o) => o.status === "skipped").length,
+      processed: processed.length,
+      solved: processed.filter((o) => o.status === "solved").length,
+      bankUsed: processed.filter((o) => o.status === "bankUsed").length,
+      penalty: processed.filter((o) => o.status === "penalty").length,
     });
   }
 );

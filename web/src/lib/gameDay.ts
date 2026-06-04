@@ -6,16 +6,18 @@ function localParts(
   date: Date,
   timeZone: string
 ): { hour: number; minute: number; second: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone,
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).formatToParts(date);
   const get = (type: string) =>
     Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return { hour: get("hour"), minute: get("minute"), second: get("second") };
+  const hourRaw = get("hour");
+  const hour = hourRaw === 24 ? 0 : hourRaw % 24;
+  return { hour, minute: get("minute"), second: get("second") };
 }
 
 function calendarDateString(date: Date, timeZone: string): string {

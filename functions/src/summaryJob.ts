@@ -6,7 +6,7 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
 import { REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
 import { Collections } from "./types";
-import { addDays, today } from "./lib/dates";
+import { gameDayJustClosed, today } from "./lib/dates";
 import { broadcastSms } from "./lib/twilio";
 import {
   buildDailySummary,
@@ -22,36 +22,47 @@ import {
 
 const scheduleOpts = {
   region: REGION,
-  timeZone: DEFAULT_TIMEZONE,
+  /** Cron is UTC; per-group timezone checked in code. */
+  timeZone: "UTC",
   secrets: [TWILIO_AUTH_TOKEN],
   memory: "256MiB" as const,
 };
 
-/** 4:10 AM — send yesterday's results after dailyProcessor (4:05). */
+/** Hourly at :10 UTC — SMS yesterday's results after dailyProcessor (:05). */
 export const dailySummaryJob = onSchedule(
-  { ...scheduleOpts, schedule: "10 4 * * *" },
+  { ...scheduleOpts, schedule: "10 * * * *" },
   async () => {
-    const tz = DEFAULT_TIMEZONE.value();
-    const date = addDays(today(tz), -1);
+    const now = new Date();
     const groups = await getAllGroups();
+    let sent = 0;
 
     await Promise.all(
       groups.map(async (g) => {
+        const tz = g.timezone || DEFAULT_TIMEZONE.value();
+        const date = gameDayJustClosed(tz, now);
+        if (!date) return;
+
         const members = await getGroupMembers(g.id);
         const phones = members.map((m) => m.phoneNumber).filter(Boolean);
         if (phones.length === 0) return;
+
         const body = await buildDailySummary(g, date);
         await broadcastSms(phones, body);
+        sent++;
       })
     );
 
-    logger.info("Daily summary sent", { date, groups: groups.length });
+    logger.info("Daily summary sent", { sent, groups: groups.length });
   }
 );
 
 /** 9 AM daily — every 14 days: SMS admin with word tallies, then reset counts. */
 export const biweeklySummaryJob = onSchedule(
-  { ...scheduleOpts, schedule: "0 9 * * *" },
+  {
+    ...scheduleOpts,
+    timeZone: DEFAULT_TIMEZONE,
+    schedule: "0 9 * * *",
+  },
   async () => {
     const tz = DEFAULT_TIMEZONE.value();
     const date = today(tz);
