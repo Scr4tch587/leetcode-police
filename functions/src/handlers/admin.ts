@@ -15,6 +15,7 @@ import { requireAdmin, requireUser, userFromSnap } from "../lib/callable";
 import { collectForUsers, formatGroupCheckDebug } from "../lib/collector";
 import { effectiveSolvedToday } from "../lib/dailyStatus";
 import { today } from "../lib/dates";
+import { PENALTY_SCORE_PER_MISS } from "../lib/game";
 import { scoreOf } from "../lib/userScore";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -88,7 +89,11 @@ async function assertSameGroupUser(admin: User, userId: string): Promise<User> {
   return target;
 }
 
-async function todayStatusContext(admin: User, userId: string) {
+async function todayStatusContext(
+  admin: User,
+  userId: string,
+  dateOverride?: string
+) {
   await assertSameGroupUser(admin, userId);
   const groupSnap = await db
     .collection(Collections.groups)
@@ -96,7 +101,7 @@ async function todayStatusContext(admin: User, userId: string) {
     .get();
   const timeZone =
     (groupSnap.data()?.timezone as string | undefined) || "America/Toronto";
-  const date = today(timeZone);
+  const date = dateOverride?.trim() || today(timeZone);
   const dsRef = db
     .collection(Collections.dailyStatus)
     .doc(dailyStatusId(userId, date));
@@ -259,6 +264,49 @@ export const grantTodaySolve = onCall(opts, async (req) => {
   });
 
   logger.info("Admin granted today solve", {
+    adminId: admin.id,
+    targetUserId: userId,
+    date,
+    ...result,
+  });
+
+  return { ok: true, date, ...result };
+});
+
+/** Admin: remove a miss (penalty) for a game day; reverses +2 score if applied. */
+export const clearDayMiss = onCall(opts, async (req) => {
+  const admin = await requireAdmin(req);
+  const userId = req.data?.userId as string;
+  const dateArg = req.data?.date as string | undefined;
+  if (!userId) {
+    throw new HttpsError("invalid-argument", "userId is required.");
+  }
+
+  const { date, dsRef, userRef } = await todayStatusContext(
+    admin,
+    userId,
+    dateArg
+  );
+
+  const result = await db.runTransaction(async (tx) => {
+    const [dsSnap, userSnap] = await Promise.all([tx.get(dsRef), tx.get(userRef)]);
+    const prev = dsSnap.data() as DailyStatus | undefined;
+    const userData = userSnap.data() as User | undefined;
+
+    if (!prev?.penaltyApplied) {
+      return { alreadyClear: true, scoreReversed: 0 };
+    }
+
+    if (userData) {
+      const nextScore = Math.max(0, scoreOf(userData) - PENALTY_SCORE_PER_MISS);
+      tx.update(userRef, { score: nextScore, wordPenalty: nextScore });
+    }
+
+    tx.set(dsRef, { penaltyApplied: false }, { merge: true });
+    return { alreadyClear: false, scoreReversed: PENALTY_SCORE_PER_MISS };
+  });
+
+  logger.info("Admin cleared day miss", {
     adminId: admin.id,
     targetUserId: userId,
     date,

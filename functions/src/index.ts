@@ -30,4 +30,5 @@ export {
   updateGroupSettings,
   nullifyTodaySolve,
   grantTodaySolve,
+  clearDayMiss,
 } from "./handlers/admin";

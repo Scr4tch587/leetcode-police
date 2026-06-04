@@ -53,6 +53,10 @@ export const api = {
       wasVoided: boolean;
     }
   >("grantTodaySolve"),
+  clearDayMiss: call<
+    { userId: string; date?: string },
+    { ok: boolean; date: string; alreadyClear: boolean; scoreReversed: number }
+  >("clearDayMiss"),
   runSubmissionCheck: call<
     { userId?: string },
     {

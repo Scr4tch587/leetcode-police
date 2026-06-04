@@ -22,14 +22,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useGroupMembers } from "@/hooks/useGroupData";
+import { useGroupDailyStatus, useGroupMembers } from "@/hooks/useGroupData";
 import { manualCheckMessage } from "@/lib/checkMessages";
+import { localDate } from "@/lib/dashboard";
 import { groupScoreLabel } from "@/lib/groupScore";
 import { userScore } from "@/lib/userScore";
 
 export function Admin() {
   const { profile, group } = useAuth();
   const members = useGroupMembers(profile?.groupId);
+  const dailyStatuses = useGroupDailyStatus(profile?.groupId);
+  const todayStr = group ? localDate(group.timezone) : "";
+  const yesterdayStr = group ? localDate(group.timezone, -1) : "";
   const [scoreLabel, setScoreLabel] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +164,19 @@ export function Admin() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((m) => (
+                {members.map((m) => {
+                  const todayStatus = dailyStatuses.find(
+                    (s) => s.userId === m.id && s.date === todayStr
+                  );
+                  const yesterdayStatus = dailyStatuses.find(
+                    (s) => s.userId === m.id && s.date === yesterdayStr
+                  );
+                  const missDate = todayStatus?.penaltyApplied
+                    ? todayStr
+                    : yesterdayStatus?.penaltyApplied
+                      ? yesterdayStr
+                      : null;
+                  return (
                   <TableRow key={m.id}>
                     <TableCell className="font-medium">{m.displayName}</TableCell>
                     <TableCell className="max-w-[10rem] truncate text-xs text-muted-foreground">
@@ -227,12 +243,14 @@ export function Admin() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
                         <Button
                           variant="outline"
                           size="sm"
                           disabled={
-                            busyId === `grant-${m.id}` || busyId === `void-${m.id}`
+                            busyId === `grant-${m.id}` ||
+                            busyId === `void-${m.id}` ||
+                            busyId === `miss-${m.id}`
                           }
                           onClick={() => {
                             if (
@@ -260,7 +278,9 @@ export function Admin() {
                           variant="outline"
                           size="sm"
                           disabled={
-                            busyId === `grant-${m.id}` || busyId === `void-${m.id}`
+                            busyId === `grant-${m.id}` ||
+                            busyId === `void-${m.id}` ||
+                            busyId === `miss-${m.id}`
                           }
                           onClick={() => {
                             if (
@@ -284,6 +304,35 @@ export function Admin() {
                         >
                           Void
                         </Button>
+                        {missDate && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busyId === `miss-${m.id}`}
+                            onClick={() => {
+                              if (
+                                !confirm(
+                                  `Clear ${m.displayName}'s miss for ${missDate}? Their score will go down by 2.`
+                                )
+                              ) {
+                                return;
+                              }
+                              void wrap(`miss-${m.id}`, async () => {
+                                const res = await api.clearDayMiss({
+                                  userId: m.id,
+                                  date: missDate,
+                                });
+                                setSettingsMsg(
+                                  res.alreadyClear
+                                    ? `${m.displayName} has no miss on ${missDate}.`
+                                    : `Cleared miss for ${m.displayName} on ${missDate} (−${res.scoreReversed} score).`
+                                );
+                              });
+                            }}
+                          >
+                            Clear miss
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -304,7 +353,8 @@ export function Admin() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
