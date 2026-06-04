@@ -158,9 +158,3 @@ Cron timezone is the `TIMEZONE` param. Per-group `timezone` is used when assigni
 
 ---
 
-## Migration from screenshot/OCR version
-
-- Remove Twilio **Messaging webhook** (no MMS ingestion).
-- Users must set **LeetCode username** and/or **Codeforces handle** in Profile.
-- Old `submissions` / `problemHistory` docs are not migrated; collector will repopulate new events going forward.
-- Redeploy functions so old schedulers are replaced.

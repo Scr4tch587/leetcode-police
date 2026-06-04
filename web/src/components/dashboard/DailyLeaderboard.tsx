@@ -3,6 +3,8 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { cellFor, CELL_LABEL } from "@/lib/dashboard";
 import { DailyRaceSolveTooltip } from "@/components/dashboard/DailyRaceSolveTooltip";
 import {
-  formatSolveTime,
+  raceSolveTimeLabel,
   sortDailyLeaderboard,
   type MemberRow,
 } from "@/lib/leaderboard";
@@ -33,9 +35,18 @@ export function DailyLeaderboard({
       </CardHeader>
       <CardContent className="overflow-visible">
         <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-8" />
+              <TableHead>Member</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-28 text-right">Solved at</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
             {sorted.map((m, i) => {
               const cell = cellFor(m.todayStatus);
+              const solvedAt = raceSolveTimeLabel(m, timeZone);
               return (
                 <TableRow
                   key={m.id}
@@ -65,13 +76,13 @@ export function DailyLeaderboard({
                       {CELL_LABEL[cell]}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    {m.solvedToday ? (
-                      <span className="font-medium text-foreground">
-                        {formatSolveTime(m.solveTimeMs, timeZone)}
+                  <TableCell className="w-28 text-right tabular-nums">
+                    {solvedAt ? (
+                      <span className="font-semibold text-foreground">
+                        {solvedAt}
                       </span>
                     ) : (
-                      "—"
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                 </TableRow>

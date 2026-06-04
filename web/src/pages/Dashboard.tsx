@@ -30,7 +30,7 @@ export function Dashboard() {
   const { profile, group } = useAuth();
   const members = useGroupMembers(group?.id);
   const statuses = useGroupDailyStatus(group?.id);
-  const recentSubs = useGroupSubmissions(group?.id, 80);
+  const recentSubs = useGroupSubmissions(group?.id, 200);
 
   const scoreLabel = groupScoreLabel(group);
 

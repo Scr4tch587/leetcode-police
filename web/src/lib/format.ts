@@ -45,6 +45,22 @@ export function formatDateTime(
   }).format(d);
 }
 
+/** Single-line date + time for tables (e.g. "Jun 2, 3:42 PM"). */
+export function formatDateTimeLine(
+  ts: Timestamp | null | undefined,
+  timeZone?: string
+): string {
+  const d = firestoreDate(ts);
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
 export function localDateKey(
   ts: Timestamp | null | undefined,
   timeZone: string

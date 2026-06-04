@@ -64,9 +64,13 @@ export function buildMemberRows(
       timeZone,
       submissions
     );
-    const solveTimeMs = solvedToday
-      ? solveTimeTodayMs(m.id, todayStr, timeZone, submissions)
-      : Number.POSITIVE_INFINITY;
+    const solveMsFromSub = todaySolve?.timestamp?.toDate?.()?.getTime();
+    const solveTimeMs =
+      solveMsFromSub != null
+        ? solveMsFromSub
+        : solvedToday
+          ? solveTimeTodayMs(m.id, todayStr, timeZone, submissions)
+          : Number.POSITIVE_INFINITY;
     return {
       ...m,
       todayStatus: ds,
@@ -104,4 +108,16 @@ export function formatSolveTime(
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(solveTimeMs));
+}
+
+/** Time shown in today's race (from submission when available). */
+export function raceSolveTimeLabel(
+  member: MemberRow,
+  timeZone: string
+): string | null {
+  const ms =
+    member.todaySolve?.timestamp?.toDate?.()?.getTime() ??
+    (Number.isFinite(member.solveTimeMs) ? member.solveTimeMs : null);
+  if (ms == null) return null;
+  return formatSolveTime(ms, timeZone);
 }
