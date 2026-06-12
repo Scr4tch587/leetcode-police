@@ -246,6 +246,86 @@ export async function reconcileTodayExtras(
 }
 
 /**
+ * A day already resolved as bankUsed/penalty, but submissions arrived afterward
+ * (e.g. AtCoder's data API lagged past the 4 AM cutoff). Reverse the false
+ * closure: refund the spent bank credit or the penalty, mark the day solved,
+ * and bank any extras. Idempotent — clears the flags so re-runs are no-ops.
+ */
+export async function reverseFalseClosure(
+  user: Pick<User, "id" | "groupId">,
+  date: string,
+  timeZone: string
+): Promise<MidnightOutcome | null> {
+  if (!user.groupId) return null;
+
+  const dsRef = db
+    .collection(Collections.dailyStatus)
+    .doc(dailyStatusId(user.id, date));
+
+  // Cheap pre-check before the (expensive) submission count.
+  const pre = (await dsRef.get()).data() as DailyStatus | undefined;
+  if (!pre?.resolved) return null;
+  if (!pre.bankUsed && !pre.penaltyApplied) return null;
+
+  const count = await countSubmissionsForDay(user.id, date, timeZone);
+  if (count < 1) return null;
+
+  return db.runTransaction(async (tx) => {
+    const userRef = db.collection(Collections.users).doc(user.id);
+    const dsSnap = await tx.get(dsRef);
+    const ds = dsSnap.data() as DailyStatus | undefined;
+
+    // Re-check inside the transaction (may have been reversed concurrently).
+    if (!ds?.resolved) return null;
+    if (!ds.bankUsed && !ds.penaltyApplied) return null;
+
+    const alreadyBanked = ds.extrasBanked ?? 0;
+    const extraCredit = extrasToBank(count, alreadyBanked);
+    // Refund the wrongly-spent bank credit, plus bank any extra solves.
+    const bankDelta = (ds.bankUsed ? 1 : 0) + extraCredit;
+
+    const userUpdates: Record<string, unknown> = {};
+    if (ds.penaltyApplied) {
+      userUpdates.score = FieldValue.increment(-PENALTY_SCORE_PER_MISS);
+    }
+    if (bankDelta > 0) {
+      userUpdates.bankedProblems = FieldValue.increment(bankDelta);
+    }
+    if (Object.keys(userUpdates).length > 0) {
+      tx.update(userRef, userUpdates);
+    }
+
+    const next: DailyStatus = {
+      ...ds,
+      solvedToday: true,
+      bankUsed: false,
+      penaltyApplied: false,
+      submissionCount: count,
+      extrasBanked: alreadyBanked + extraCredit,
+      resolved: true,
+    };
+    tx.set(dsRef, next, { merge: true });
+
+    logger.info("Reversed false day closure after late submission", {
+      userId: user.id,
+      date,
+      count,
+      refundedBank: ds.bankUsed,
+      reversedPenalty: ds.penaltyApplied,
+      bankedExtras: extraCredit,
+    });
+
+    return {
+      userId: user.id,
+      date,
+      status: "reconciled" as const,
+      submissionCount: count,
+      extrasBanked: next.extrasBanked,
+    };
+  });
+}
+
+/**
  * After sync: close history (no bank), bank today's extras from DB count, catch up yesterday.
  */
 export async function reconcilePendingDays(
@@ -259,7 +339,8 @@ export async function reconcilePendingDays(
   const todayOutcome = await reconcileTodayExtras(user, timeZone);
   if (todayOutcome) outcomes.push(todayOutcome);
 
-  const yesterday = addDays(today(timeZone), -1);
+  const todayStr = today(timeZone);
+  const yesterday = addDays(todayStr, -1);
   const dsRef = db
     .collection(Collections.dailyStatus)
     .doc(dailyStatusId(user.id, yesterday));
@@ -277,6 +358,17 @@ export async function reconcilePendingDays(
         extrasBanked: outcome.extrasBanked,
       });
     }
+  }
+
+  // Late submissions (e.g. AtCoder API lag) can land after a day was already
+  // closed as bankUsed/penalty. Refund those recent days now that subs exist.
+  for (const offset of [1, 2, 3]) {
+    const reversed = await reverseFalseClosure(
+      user,
+      addDays(todayStr, -offset),
+      timeZone
+    );
+    if (reversed) outcomes.push(reversed);
   }
 
   return outcomes;
