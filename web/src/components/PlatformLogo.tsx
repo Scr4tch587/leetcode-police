@@ -10,6 +10,10 @@ const LOGO: Record<Platform, { src: string; alt: string }> = {
     src: "https://codeforces.org/favicon.ico",
     alt: "Codeforces",
   },
+  atcoder: {
+    src: "https://atcoder.jp/favicon.ico",
+    alt: "AtCoder",
+  },
 };
 
 export function PlatformLogo({
@@ -34,12 +38,17 @@ export function PlatformLogo({
 }
 
 export function platformHandle(
-  user: Pick<User, "leetcodeUsername" | "codeforcesHandle"> | undefined,
+  user:
+    | Pick<User, "leetcodeUsername" | "codeforcesHandle" | "atcoderHandle">
+    | undefined,
   platform: Platform
 ): string {
   if (!user) return "—";
   if (platform === "leetcode") {
     return user.leetcodeUsername?.trim() || "—";
+  }
+  if (platform === "atcoder") {
+    return user.atcoderHandle?.trim() || "—";
   }
   return user.codeforcesHandle?.trim() || "—";
 }

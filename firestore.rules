@@ -66,7 +66,7 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && request.auth.uid == userId
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle'])
+             .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle', 'atcoderHandle'])
         // phone/displayName changes only; everything else must be unchanged.
         && request.resource.data.score == resource.data.score
         && request.resource.data.bankedProblems == resource.data.bankedProblems

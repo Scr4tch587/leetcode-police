@@ -23,6 +23,7 @@ export function Profile() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
   const [codeforcesHandle, setCodeforcesHandle] = useState("");
+  const [atcoderHandle, setAtcoderHandle] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export function Profile() {
       setPhoneNumber(profile.phoneNumber);
       setLeetcodeUsername(profile.leetcodeUsername ?? "");
       setCodeforcesHandle(profile.codeforcesHandle ?? "");
+      setAtcoderHandle(profile.atcoderHandle ?? "");
     }
   }, [profile]);
 
@@ -40,9 +42,13 @@ export function Profile() {
     setBusy(true);
     setError(null);
     setMsg(null);
-    if (!leetcodeUsername.trim() && !codeforcesHandle.trim()) {
+    if (
+      !leetcodeUsername.trim() &&
+      !codeforcesHandle.trim() &&
+      !atcoderHandle.trim()
+    ) {
       setError(
-        "At least one LeetCode username or Codeforces handle is required."
+        "At least one LeetCode, Codeforces, or AtCoder handle is required."
       );
       setBusy(false);
       return;
@@ -53,8 +59,9 @@ export function Profile() {
         phoneNumber,
         leetcodeUsername,
         codeforcesHandle,
+        atcoderHandle,
       });
-      setMsg("Saved. Handles were verified on LeetCode / Codeforces.");
+      setMsg("Saved. Handles were verified on LeetCode / Codeforces / AtCoder.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -124,6 +131,15 @@ export function Profile() {
                 id="codeforces"
                 value={codeforcesHandle}
                 onChange={(e) => setCodeforcesHandle(e.target.value)}
+                placeholder="tourist"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="atcoder">AtCoder handle</Label>
+              <Input
+                id="atcoder"
+                value={atcoderHandle}
+                onChange={(e) => setAtcoderHandle(e.target.value)}
                 placeholder="tourist"
               />
             </div>

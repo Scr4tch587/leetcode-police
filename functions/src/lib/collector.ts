@@ -9,6 +9,10 @@ import {
   fetchAcceptedSubmissions,
   fetchLatestAccepted,
 } from "../codeforcesClient";
+import {
+  fetchAcceptedSubmissions as fetchAtcoderAccepted,
+  fetchLatestAccepted as fetchAtcoderLatest,
+} from "../atcoderClient";
 import { fetchRecentAccepted } from "../leetcodeScraper";
 import { liftVoidIfSubmissionsToday } from "./adminDailyStatus";
 import { reconcilePendingDays } from "./game";
@@ -34,6 +38,7 @@ export interface CollectResult {
   skipReason?: string;
   hasLeetcodeHandle?: boolean;
   hasCodeforcesHandle?: boolean;
+  hasAtcoderHandle?: boolean;
   /** Most recent AC per configured platform (manual check debug only). */
   latestSeenByPlatform?: LatestSeen[];
   /** Last ingest error this run (manual debugging). */
@@ -126,6 +131,35 @@ async function resolveLatestSeenPerPlatform(
     }
   }
 
+  if (user.atcoderHandle?.trim()) {
+    try {
+      const latest = await fetchAtcoderLatest(user.atcoderHandle.trim());
+      if (latest) {
+        const inDb = await submissionExists(
+          user.id,
+          "atcoder",
+          latest.problemId
+        );
+        out.push({
+          platform: "atcoder",
+          problemId: latest.problemId,
+          problemName: latest.problemName,
+          timestampSeconds: latest.timestamp,
+          localDate: localDateString(
+            new Date(latest.timestamp * 1000),
+            timeZone
+          ),
+          alreadyInDb: inDb,
+        });
+      }
+    } catch (err) {
+      logger.error("AtCoder latest-AC peek failed", {
+        userId: user.id,
+        err,
+      });
+    }
+  }
+
   return out.sort((a, b) => a.platform.localeCompare(b.platform));
 }
 
@@ -162,6 +196,9 @@ export function formatUserCheckDebug(r: CollectResult): string {
   const seenCf = Boolean(
     r.latestSeenByPlatform?.some((x) => x.platform === "codeforces")
   );
+  const seenAc = Boolean(
+    r.latestSeenByPlatform?.some((x) => x.platform === "atcoder")
+  );
 
   if (r.latestSeenByPlatform?.length) {
     for (const ls of r.latestSeenByPlatform) {
@@ -175,8 +212,11 @@ export function formatUserCheckDebug(r: CollectResult): string {
   if (r.hasCodeforcesHandle && !seenCf) {
     lines.push("  codeforces: no accepted submissions found");
   }
+  if (r.hasAtcoderHandle && !seenAc) {
+    lines.push("  atcoder: no accepted submissions found");
+  }
 
-  if (!r.hasLeetcodeHandle && !r.hasCodeforcesHandle) {
+  if (!r.hasLeetcodeHandle && !r.hasCodeforcesHandle && !r.hasAtcoderHandle) {
     lines.push("  Latest AC: none found from APIs.");
   }
 
@@ -199,7 +239,7 @@ export function formatGroupCheckDebug(
   ].join("\n");
 }
 
-/** Poll Codeforces + LeetCode for one user. */
+/** Poll Codeforces + LeetCode + AtCoder for one user. */
 export async function collectForUser(
   user: User,
   options?: CollectOptions
@@ -303,6 +343,48 @@ export async function collectForUser(
     }
   }
 
+  if (user.atcoderHandle?.trim()) {
+    try {
+      const subs = await fetchAtcoderAccepted(
+        user.atcoderHandle.trim(),
+        cfSince
+      );
+      for (const s of subs) {
+        try {
+          const added = await ingestSubmission(
+            user,
+            {
+              platform: "atcoder",
+              problemId: s.problemId,
+              problemName: s.problemName,
+              timestampSeconds: s.timestamp,
+            },
+            tz
+          );
+          if (added) {
+            ingested++;
+            maxNewTs = Math.max(maxNewTs, s.timestamp);
+          }
+        } catch (err) {
+          lastIngestError = `atcoder/${s.problemId}: ${errMessage(err)}`;
+          logger.error("Ingest failed", {
+            userId: user.id,
+            platform: "atcoder",
+            problemId: s.problemId,
+            error: lastIngestError,
+          });
+        }
+      }
+    } catch (err) {
+      lastIngestError = `atcoder API: ${errMessage(err)}`;
+      logger.error("AtCoder collect failed", {
+        userId: user.id,
+        handle: user.atcoderHandle,
+        error: lastIngestError,
+      });
+    }
+  }
+
   if (ingested > 0 && maxNewTs > 0) {
     await updateLastProcessed(user.id, maxNewTs);
   }
@@ -337,15 +419,20 @@ export async function collectForUsers(
   const debug = options?.includeLatestSeen === true;
 
   for (const user of users) {
-    if (!user.leetcodeUsername?.trim() && !user.codeforcesHandle?.trim()) {
+    if (
+      !user.leetcodeUsername?.trim() &&
+      !user.codeforcesHandle?.trim() &&
+      !user.atcoderHandle?.trim()
+    ) {
       const row: CollectResult = {
         userId: user.id,
         displayName: user.displayName,
         ingested: 0,
         skipped: true,
-        skipReason: "No LeetCode username or Codeforces handle",
+        skipReason: "No LeetCode, Codeforces, or AtCoder handle",
         hasLeetcodeHandle: false,
         hasCodeforcesHandle: false,
+        hasAtcoderHandle: false,
         latestSeenByPlatform: debug ? [] : undefined,
       };
       if (debug) row.debugMessage = formatUserCheckDebug(row);
@@ -362,6 +449,7 @@ export async function collectForUsers(
       skipped: false,
       hasLeetcodeHandle: Boolean(user.leetcodeUsername?.trim()),
       hasCodeforcesHandle: Boolean(user.codeforcesHandle?.trim()),
+      hasAtcoderHandle: Boolean(user.atcoderHandle?.trim()),
       latestSeenByPlatform,
       lastIngestError,
     };

@@ -1,6 +1,6 @@
 import type { Timestamp } from "firebase/firestore";
 
-export type Platform = "leetcode" | "codeforces";
+export type Platform = "leetcode" | "codeforces" | "atcoder";
 
 export interface User {
   id: string;
@@ -8,6 +8,7 @@ export interface User {
   phoneNumber: string;
   leetcodeUsername: string;
   codeforcesHandle: string;
+  atcoderHandle: string;
   groupId: string | null;
   score: number;
   /** @deprecated Legacy field — use score */

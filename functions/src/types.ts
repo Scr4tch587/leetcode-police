@@ -5,7 +5,7 @@
  */
 import { Timestamp } from "firebase-admin/firestore";
 
-export type Platform = "leetcode" | "codeforces";
+export type Platform = "leetcode" | "codeforces" | "atcoder";
 
 export interface User {
   id: string;
@@ -14,6 +14,7 @@ export interface User {
   phoneNumber: string;
   leetcodeUsername: string;
   codeforcesHandle: string;
+  atcoderHandle: string;
   groupId: string | null;
   /** Penalty tally for the current cycle (legacy field: wordPenalty). */
   score: number;
