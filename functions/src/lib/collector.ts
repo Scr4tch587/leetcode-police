@@ -343,11 +343,16 @@ export async function collectForUser(
     }
   }
 
+  // AtCoder: scan a fixed recent window, NOT the shared forward cursor.
+  // kenkoooo's crawler lags, so a submission can surface in their API with an
+  // epoch_second earlier than lastProcessedTimestamp (which advances on any
+  // LeetCode/Codeforces solve). Using the cursor would skip those late-indexed
+  // solves permanently. Dedup is handled by ingestSubmission's existence check.
   if (user.atcoderHandle?.trim()) {
     try {
       const subs = await fetchAtcoderAccepted(
         user.atcoderHandle.trim(),
-        cfSince
+        sixtyDaysAgo
       );
       for (const s of subs) {
         try {
