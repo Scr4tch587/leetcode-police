@@ -5,7 +5,7 @@
  */
 import { Timestamp } from "firebase-admin/firestore";
 
-export type Platform = "leetcode" | "codeforces" | "atcoder";
+export type Platform = "leetcode" | "codeforces" | "atcoder" | "cses";
 
 export interface User {
   id: string;
@@ -15,6 +15,8 @@ export interface User {
   leetcodeUsername: string;
   codeforcesHandle: string;
   atcoderHandle: string;
+  /** Numeric CSES account id (the `<id>` in cses.fi/user/<id>). */
+  csesUserId: string;
   groupId: string | null;
   /** Penalty tally for the current cycle (legacy field: wordPenalty). */
   score: number;

@@ -1,9 +1,10 @@
 /**
- * Verify LeetCode / Codeforces / AtCoder handles exist on the public platform.
+ * Verify LeetCode / Codeforces / AtCoder / CSES handles exist on the platform.
  */
 const LC_GRAPHQL = "https://leetcode.com/graphql";
 const CF_USER_INFO = "https://codeforces.com/api/user.info";
 const AC_USER_PAGE = "https://atcoder.jp/users";
+const CSES_USER_PAGE = "https://cses.fi/user";
 
 const LC_USER_QUERY = `
   query userPublicProfile($username: String!) {
@@ -94,22 +95,57 @@ export async function verifyAtcoderHandle(handle: string): Promise<void> {
   }
 }
 
-export async function verifyAtLeastOneHandle(
-  leetcodeUsername: string,
-  codeforcesHandle: string,
-  atcoderHandle: string
-): Promise<{ leetcode: boolean; codeforces: boolean; atcoder: boolean }> {
-  const lc = leetcodeUsername.trim();
-  const cf = codeforcesHandle.trim();
-  const ac = atcoderHandle.trim();
-
-  if (!lc && !cf && !ac) {
+export async function verifyCsesUserId(userId: string): Promise<void> {
+  const id = userId.trim();
+  if (!id) throw new Error("CSES user id is empty.");
+  if (!/^\d+$/.test(id)) {
     throw new Error(
-      "Add at least one LeetCode, Codeforces, or AtCoder handle (verified on the platform)."
+      `CSES user id "${id}" must be the numeric account id from cses.fi/user/<id>.`
     );
   }
 
-  const verified = { leetcode: false, codeforces: false, atcoder: false };
+  // CSES has no public user-info API; its account page 404s for unknown ids.
+  const url = `${CSES_USER_PAGE}/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "leetcode-police/1.0" },
+  });
+
+  if (res.status === 404) {
+    throw new Error(`CSES user id "${id}" was not found.`);
+  }
+  if (!res.ok) {
+    throw new Error(`CSES lookup failed (HTTP ${res.status}).`);
+  }
+}
+
+export async function verifyAtLeastOneHandle(
+  leetcodeUsername: string,
+  codeforcesHandle: string,
+  atcoderHandle: string,
+  csesUserId: string
+): Promise<{
+  leetcode: boolean;
+  codeforces: boolean;
+  atcoder: boolean;
+  cses: boolean;
+}> {
+  const lc = leetcodeUsername.trim();
+  const cf = codeforcesHandle.trim();
+  const ac = atcoderHandle.trim();
+  const cs = csesUserId.trim();
+
+  if (!lc && !cf && !ac && !cs) {
+    throw new Error(
+      "Add at least one LeetCode, Codeforces, AtCoder, or CSES handle (verified on the platform)."
+    );
+  }
+
+  const verified = {
+    leetcode: false,
+    codeforces: false,
+    atcoder: false,
+    cses: false,
+  };
   const errors: string[] = [];
 
   if (lc) {
@@ -139,7 +175,21 @@ export async function verifyAtLeastOneHandle(
     }
   }
 
-  if (!verified.leetcode && !verified.codeforces && !verified.atcoder) {
+  if (cs) {
+    try {
+      await verifyCsesUserId(cs);
+      verified.cses = true;
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (
+    !verified.leetcode &&
+    !verified.codeforces &&
+    !verified.atcoder &&
+    !verified.cses
+  ) {
     throw new Error(errors.join(" "));
   }
 

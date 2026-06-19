@@ -14,6 +14,10 @@ const LOGO: Record<Platform, { src: string; alt: string }> = {
     src: "https://atcoder.jp/favicon.ico",
     alt: "AtCoder",
   },
+  cses: {
+    src: "https://cses.fi/logo.png",
+    alt: "CSES",
+  },
 };
 
 export function PlatformLogo({
@@ -39,7 +43,13 @@ export function PlatformLogo({
 
 export function platformHandle(
   user:
-    | Pick<User, "leetcodeUsername" | "codeforcesHandle" | "atcoderHandle">
+    | Pick<
+        User,
+        | "leetcodeUsername"
+        | "codeforcesHandle"
+        | "atcoderHandle"
+        | "csesUserId"
+      >
     | undefined,
   platform: Platform
 ): string {
@@ -49,6 +59,9 @@ export function platformHandle(
   }
   if (platform === "atcoder") {
     return user.atcoderHandle?.trim() || "—";
+  }
+  if (platform === "cses") {
+    return user.csesUserId?.trim() || "—";
   }
   return user.codeforcesHandle?.trim() || "—";
 }

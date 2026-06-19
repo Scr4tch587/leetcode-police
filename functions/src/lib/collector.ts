@@ -13,6 +13,10 @@ import {
   fetchAcceptedSubmissions as fetchAtcoderAccepted,
   fetchLatestAccepted as fetchAtcoderLatest,
 } from "../atcoderClient";
+import {
+  fetchRecentActivity as fetchCsesActivity,
+  fetchLatestActivity as fetchCsesLatest,
+} from "../csesClient";
 import { fetchRecentAccepted } from "../leetcodeScraper";
 import { liftVoidIfSubmissionsToday } from "./adminDailyStatus";
 import { reconcilePendingDays } from "./game";
@@ -39,6 +43,7 @@ export interface CollectResult {
   hasLeetcodeHandle?: boolean;
   hasCodeforcesHandle?: boolean;
   hasAtcoderHandle?: boolean;
+  hasCsesHandle?: boolean;
   /** Most recent AC per configured platform (manual check debug only). */
   latestSeenByPlatform?: LatestSeen[];
   /** Last ingest error this run (manual debugging). */
@@ -49,6 +54,15 @@ export interface CollectResult {
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * CSES exposes only "latest submission activity", not per-problem solves, so we
+ * key it by game day: at most one synthetic submission per day, which marks the
+ * day solved without ever banking an extra. See csesClient for the full caveat.
+ */
+function csesDayKey(timestampSeconds: number, timeZone: string): string {
+  return localDateString(new Date(timestampSeconds * 1000), timeZone);
 }
 
 export interface CollectOptions {
@@ -160,6 +174,33 @@ async function resolveLatestSeenPerPlatform(
     }
   }
 
+  if (user.csesUserId?.trim()) {
+    try {
+      const latest = await fetchCsesLatest(user.csesUserId.trim());
+      if (latest) {
+        // Key by game day to match how the activity is actually ingested.
+        const problemId = csesDayKey(latest.timestamp, timeZone);
+        const inDb = await submissionExists(user.id, "cses", problemId);
+        out.push({
+          platform: "cses",
+          problemId,
+          problemName: latest.problemName,
+          timestampSeconds: latest.timestamp,
+          localDate: localDateString(
+            new Date(latest.timestamp * 1000),
+            timeZone
+          ),
+          alreadyInDb: inDb,
+        });
+      }
+    } catch (err) {
+      logger.error("CSES latest-activity peek failed", {
+        userId: user.id,
+        err,
+      });
+    }
+  }
+
   return out.sort((a, b) => a.platform.localeCompare(b.platform));
 }
 
@@ -199,6 +240,9 @@ export function formatUserCheckDebug(r: CollectResult): string {
   const seenAc = Boolean(
     r.latestSeenByPlatform?.some((x) => x.platform === "atcoder")
   );
+  const seenCs = Boolean(
+    r.latestSeenByPlatform?.some((x) => x.platform === "cses")
+  );
 
   if (r.latestSeenByPlatform?.length) {
     for (const ls of r.latestSeenByPlatform) {
@@ -215,8 +259,16 @@ export function formatUserCheckDebug(r: CollectResult): string {
   if (r.hasAtcoderHandle && !seenAc) {
     lines.push("  atcoder: no accepted submissions found");
   }
+  if (r.hasCsesHandle && !seenCs) {
+    lines.push("  cses: no submission activity found");
+  }
 
-  if (!r.hasLeetcodeHandle && !r.hasCodeforcesHandle && !r.hasAtcoderHandle) {
+  if (
+    !r.hasLeetcodeHandle &&
+    !r.hasCodeforcesHandle &&
+    !r.hasAtcoderHandle &&
+    !r.hasCsesHandle
+  ) {
     lines.push("  Latest AC: none found from APIs.");
   }
 
@@ -239,7 +291,7 @@ export function formatGroupCheckDebug(
   ].join("\n");
 }
 
-/** Poll Codeforces + LeetCode + AtCoder for one user. */
+/** Poll Codeforces + LeetCode + AtCoder + CSES for one user. */
 export async function collectForUser(
   user: User,
   options?: CollectOptions
@@ -390,6 +442,48 @@ export async function collectForUser(
     }
   }
 
+  // CSES: public activity signal only (latest submission time). Like AtCoder we
+  // scan from the fixed recent floor, not the shared cursor. We key by game day
+  // (csesDayKey) so each day's activity ingests at most once — never banking.
+  if (user.csesUserId?.trim()) {
+    try {
+      const subs = await fetchCsesActivity(user.csesUserId.trim(), sixtyDaysAgo);
+      for (const s of subs) {
+        try {
+          const added = await ingestSubmission(
+            user,
+            {
+              platform: "cses",
+              problemId: csesDayKey(s.timestamp, tz),
+              problemName: s.problemName,
+              timestampSeconds: s.timestamp,
+            },
+            tz
+          );
+          if (added) {
+            ingested++;
+            maxNewTs = Math.max(maxNewTs, s.timestamp);
+          }
+        } catch (err) {
+          lastIngestError = `cses/${s.problemId}: ${errMessage(err)}`;
+          logger.error("Ingest failed", {
+            userId: user.id,
+            platform: "cses",
+            problemId: s.problemId,
+            error: lastIngestError,
+          });
+        }
+      }
+    } catch (err) {
+      lastIngestError = `cses API: ${errMessage(err)}`;
+      logger.error("CSES collect failed", {
+        userId: user.id,
+        csesUserId: user.csesUserId,
+        error: lastIngestError,
+      });
+    }
+  }
+
   if (ingested > 0 && maxNewTs > 0) {
     await updateLastProcessed(user.id, maxNewTs);
   }
@@ -427,17 +521,19 @@ export async function collectForUsers(
     if (
       !user.leetcodeUsername?.trim() &&
       !user.codeforcesHandle?.trim() &&
-      !user.atcoderHandle?.trim()
+      !user.atcoderHandle?.trim() &&
+      !user.csesUserId?.trim()
     ) {
       const row: CollectResult = {
         userId: user.id,
         displayName: user.displayName,
         ingested: 0,
         skipped: true,
-        skipReason: "No LeetCode, Codeforces, or AtCoder handle",
+        skipReason: "No LeetCode, Codeforces, AtCoder, or CSES handle",
         hasLeetcodeHandle: false,
         hasCodeforcesHandle: false,
         hasAtcoderHandle: false,
+        hasCsesHandle: false,
         latestSeenByPlatform: debug ? [] : undefined,
       };
       if (debug) row.debugMessage = formatUserCheckDebug(row);
@@ -455,6 +551,7 @@ export async function collectForUsers(
       hasLeetcodeHandle: Boolean(user.leetcodeUsername?.trim()),
       hasCodeforcesHandle: Boolean(user.codeforcesHandle?.trim()),
       hasAtcoderHandle: Boolean(user.atcoderHandle?.trim()),
+      hasCsesHandle: Boolean(user.csesUserId?.trim()),
       latestSeenByPlatform,
       lastIngestError,
     };

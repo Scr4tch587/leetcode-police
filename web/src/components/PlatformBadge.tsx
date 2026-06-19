@@ -5,6 +5,7 @@ const LABEL: Record<Platform, string> = {
   leetcode: "LC",
   codeforces: "CF",
   atcoder: "AC",
+  cses: "CSES",
 };
 
 export function PlatformBadge({ platform }: { platform: Platform }) {

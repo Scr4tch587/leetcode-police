@@ -41,7 +41,7 @@ export function TodayPanel({
           {solved
             ? `${submissionCount} accepted problem(s) recorded today.`
             : hasHandles
-              ? "Submissions sync from LeetCode / Codeforces / AtCoder every ~30 min."
+              ? "Submissions sync from LeetCode / Codeforces / AtCoder / CSES every ~30 min."
               : "Add platform handles in Profile to start tracking."}
         </CardDescription>
       </CardHeader>

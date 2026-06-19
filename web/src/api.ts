@@ -17,6 +17,7 @@ export const api = {
       leetcodeUsername?: string;
       codeforcesHandle?: string;
       atcoderHandle?: string;
+      csesUserId?: string;
     },
     { ok: boolean }
   >("updateProfile"),

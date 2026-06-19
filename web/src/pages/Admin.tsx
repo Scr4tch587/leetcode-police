@@ -127,7 +127,8 @@ export function Admin() {
           <CardHeader>
             <CardTitle className="text-base">Submission sync</CardTitle>
             <CardDescription>
-              Poll LeetCode, Codeforces, and AtCoder (same as the 30-minute cron).
+              Poll LeetCode, Codeforces, AtCoder, and CSES (same as the 30-minute
+              cron).
             </CardDescription>
           </CardHeader>
           <CardFooter>
@@ -181,7 +182,7 @@ export function Admin() {
                     <TableCell className="font-medium">{m.displayName}</TableCell>
                     <TableCell className="max-w-[10rem] truncate text-xs text-muted-foreground">
                       {m.leetcodeUsername || "—"} / {m.codeforcesHandle || "—"}{" "}
-                      / {m.atcoderHandle || "—"}
+                      / {m.atcoderHandle || "—"} / {m.csesUserId || "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {userScore(m)}

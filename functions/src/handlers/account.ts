@@ -45,6 +45,7 @@ export const bootstrapUser = onCall(opts, async (req) => {
     leetcodeUsername: "",
     codeforcesHandle: "",
     atcoderHandle: "",
+    csesUserId: "",
     groupId: null,
     score: 0,
     bankedProblems: 0,
@@ -101,17 +102,23 @@ export const updateProfile = onCall(opts, async (req) => {
     typeof req.data?.atcoderHandle === "string"
       ? req.data.atcoderHandle.trim().slice(0, 40)
       : user.atcoderHandle;
+  const nextCs =
+    typeof req.data?.csesUserId === "string"
+      ? req.data.csesUserId.trim().slice(0, 40)
+      : user.csesUserId;
 
   const handlesTouched =
     typeof req.data?.leetcodeUsername === "string" ||
     typeof req.data?.codeforcesHandle === "string" ||
-    typeof req.data?.atcoderHandle === "string";
+    typeof req.data?.atcoderHandle === "string" ||
+    typeof req.data?.csesUserId === "string";
 
   if (handlesTouched) {
-    await verifyAtLeastOneHandle(nextLc, nextCf, nextAc);
+    await verifyAtLeastOneHandle(nextLc, nextCf, nextAc, nextCs);
     updates.leetcodeUsername = nextLc;
     updates.codeforcesHandle = nextCf;
     updates.atcoderHandle = nextAc;
+    updates.csesUserId = nextCs;
   }
 
   if (Object.keys(updates).length > 0) {
@@ -173,10 +180,11 @@ export const joinGroup = onCall(opts, async (req) => {
   const lc = user.leetcodeUsername?.trim() ?? "";
   const cf = user.codeforcesHandle?.trim() ?? "";
   const ac = user.atcoderHandle?.trim() ?? "";
-  if (!lc && !cf && !ac) {
+  const cs = user.csesUserId?.trim() ?? "";
+  if (!lc && !cf && !ac && !cs) {
     throw new HttpsError(
       "failed-precondition",
-      "Add and save at least one verified LeetCode, Codeforces, or AtCoder handle in Profile before joining a group."
+      "Add and save at least one verified LeetCode, Codeforces, AtCoder, or CSES handle in Profile before joining a group."
     );
   }
 

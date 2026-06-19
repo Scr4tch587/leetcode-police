@@ -45,7 +45,7 @@ export const reminderJob = onSchedule(
 
         await sendSms(
           u.phoneNumber,
-          "⏰ LeetCode Police: solve one new problem before 4 AM (LeetCode, Codeforces, or AtCoder)."
+          "⏰ LeetCode Police: solve one new problem before 4 AM (LeetCode, Codeforces, AtCoder, or CSES)."
         );
         sent++;
       })

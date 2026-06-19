@@ -24,6 +24,7 @@ export function Profile() {
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
   const [codeforcesHandle, setCodeforcesHandle] = useState("");
   const [atcoderHandle, setAtcoderHandle] = useState("");
+  const [csesUserId, setCsesUserId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export function Profile() {
       setLeetcodeUsername(profile.leetcodeUsername ?? "");
       setCodeforcesHandle(profile.codeforcesHandle ?? "");
       setAtcoderHandle(profile.atcoderHandle ?? "");
+      setCsesUserId(profile.csesUserId ?? "");
     }
   }, [profile]);
 
@@ -45,10 +47,11 @@ export function Profile() {
     if (
       !leetcodeUsername.trim() &&
       !codeforcesHandle.trim() &&
-      !atcoderHandle.trim()
+      !atcoderHandle.trim() &&
+      !csesUserId.trim()
     ) {
       setError(
-        "At least one LeetCode, Codeforces, or AtCoder handle is required."
+        "At least one LeetCode, Codeforces, AtCoder, or CSES handle is required."
       );
       setBusy(false);
       return;
@@ -60,8 +63,11 @@ export function Profile() {
         leetcodeUsername,
         codeforcesHandle,
         atcoderHandle,
+        csesUserId,
       });
-      setMsg("Saved. Handles were verified on LeetCode / Codeforces / AtCoder.");
+      setMsg(
+        "Saved. Handles were verified on LeetCode / Codeforces / AtCoder / CSES."
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -142,6 +148,21 @@ export function Profile() {
                 onChange={(e) => setAtcoderHandle(e.target.value)}
                 placeholder="tourist"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cses">CSES account id</Label>
+              <Input
+                id="cses"
+                value={csesUserId}
+                onChange={(e) => setCsesUserId(e.target.value)}
+                placeholder="12345"
+                inputMode="numeric"
+              />
+              <p className="text-xs text-muted-foreground">
+                Numeric id from your profile URL, cses.fi/user/&lt;id&gt;. Tracks
+                daily submission activity (CSES has no public solved-problem
+                feed).
+              </p>
             </div>
             <Separator />
             <div className="space-y-2">
