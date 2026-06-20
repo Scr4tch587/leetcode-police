@@ -4,7 +4,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/admin";
-import { REGION, DEFAULT_TIMEZONE } from "../config";
+import { REGION, DEFAULT_TIMEZONE, CSES_ENC_KEY } from "../config";
 import { Collections, Group, User } from "../types";
 import {
   generateInviteCode,
@@ -12,8 +12,14 @@ import {
   requireUser,
 } from "../lib/callable";
 import { verifyAtLeastOneHandle } from "../lib/handleVerify";
+import {
+  setCsesCredential,
+  clearCsesCredential,
+} from "../lib/csesCredentials";
 
 const opts = { region: REGION };
+/** CSES credential callables need the encryption key at runtime. */
+const csesOpts = { region: REGION, secrets: [CSES_ENC_KEY] };
 
 function normalizeScoreLabel(raw: string): string {
   const label = raw.trim().slice(0, 120);
@@ -45,7 +51,8 @@ export const bootstrapUser = onCall(opts, async (req) => {
     leetcodeUsername: "",
     codeforcesHandle: "",
     atcoderHandle: "",
-    csesUserId: "",
+    csesUsername: "",
+    csesLinked: false,
     groupId: null,
     score: 0,
     bankedProblems: 0,
@@ -102,23 +109,19 @@ export const updateProfile = onCall(opts, async (req) => {
     typeof req.data?.atcoderHandle === "string"
       ? req.data.atcoderHandle.trim().slice(0, 40)
       : user.atcoderHandle;
-  const nextCs =
-    typeof req.data?.csesUserId === "string"
-      ? req.data.csesUserId.trim().slice(0, 40)
-      : user.csesUserId;
 
   const handlesTouched =
     typeof req.data?.leetcodeUsername === "string" ||
     typeof req.data?.codeforcesHandle === "string" ||
-    typeof req.data?.atcoderHandle === "string" ||
-    typeof req.data?.csesUserId === "string";
+    typeof req.data?.atcoderHandle === "string";
 
   if (handlesTouched) {
-    await verifyAtLeastOneHandle(nextLc, nextCf, nextAc, nextCs);
+    // CSES is linked separately; pass its linked state so a CSES-only user
+    // still satisfies the "at least one platform" requirement.
+    await verifyAtLeastOneHandle(nextLc, nextCf, nextAc, Boolean(user.csesLinked));
     updates.leetcodeUsername = nextLc;
     updates.codeforcesHandle = nextCf;
     updates.atcoderHandle = nextAc;
-    updates.csesUserId = nextCs;
   }
 
   if (Object.keys(updates).length > 0) {
@@ -180,8 +183,7 @@ export const joinGroup = onCall(opts, async (req) => {
   const lc = user.leetcodeUsername?.trim() ?? "";
   const cf = user.codeforcesHandle?.trim() ?? "";
   const ac = user.atcoderHandle?.trim() ?? "";
-  const cs = user.csesUserId?.trim() ?? "";
-  if (!lc && !cf && !ac && !cs) {
+  if (!lc && !cf && !ac && !user.csesLinked) {
     throw new HttpsError(
       "failed-precondition",
       "Add and save at least one verified LeetCode, Codeforces, AtCoder, or CSES handle in Profile before joining a group."
@@ -208,6 +210,57 @@ export const joinGroup = onCall(opts, async (req) => {
     isAdmin: false,
   });
   return { groupId: group.id, groupName: group.name };
+});
+
+/**
+ * Link CSES by verifying the login and storing the password encrypted. The
+ * password is sent over TLS, encrypted server-side, never returned, and never
+ * written to the user doc — only to the Functions-only csesCredentials doc.
+ */
+export const setCsesCredentials = onCall(csesOpts, async (req) => {
+  const user = await requireUser(req);
+
+  const username =
+    typeof req.data?.csesUsername === "string"
+      ? req.data.csesUsername.trim().slice(0, 60)
+      : "";
+  const password =
+    typeof req.data?.password === "string" ? req.data.password : "";
+
+  if (!username) {
+    throw new HttpsError("invalid-argument", "CSES username is required.");
+  }
+  if (!password || password.length > 200) {
+    throw new HttpsError("invalid-argument", "CSES password is required.");
+  }
+
+  let result: { solvedCount: number; isNew: boolean };
+  try {
+    result = await setCsesCredential(user.id, username, password);
+  } catch (e) {
+    throw new HttpsError(
+      "invalid-argument",
+      e instanceof Error ? e.message : "CSES login failed."
+    );
+  }
+
+  await db.collection(Collections.users).doc(user.id).update({
+    csesUsername: username,
+    csesLinked: true,
+  });
+
+  return { ok: true, solvedCount: result.solvedCount, isNew: result.isNew };
+});
+
+/** Unlink CSES: delete the stored credentials and clear the user flags. */
+export const clearCsesCredentials = onCall(opts, async (req) => {
+  const user = await requireUser(req);
+  await clearCsesCredential(user.id);
+  await db.collection(Collections.users).doc(user.id).update({
+    csesUsername: "",
+    csesLinked: false,
+  });
+  return { ok: true };
 });
 
 export const leaveGroup = onCall(opts, async (req) => {

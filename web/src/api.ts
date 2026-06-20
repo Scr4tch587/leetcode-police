@@ -17,10 +17,16 @@ export const api = {
       leetcodeUsername?: string;
       codeforcesHandle?: string;
       atcoderHandle?: string;
-      csesUserId?: string;
     },
     { ok: boolean }
   >("updateProfile"),
+  setCsesCredentials: call<
+    { csesUsername: string; password: string },
+    { ok: boolean; solvedCount: number; isNew: boolean }
+  >("setCsesCredentials"),
+  clearCsesCredentials: call<Record<string, never>, { ok: boolean }>(
+    "clearCsesCredentials"
+  ),
   createGroup: call<
     { name: string; timezone?: string; scoreLabel: string },
     { groupId: string; inviteCode: string }

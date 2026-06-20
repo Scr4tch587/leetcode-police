@@ -182,7 +182,8 @@ export function Admin() {
                     <TableCell className="font-medium">{m.displayName}</TableCell>
                     <TableCell className="max-w-[10rem] truncate text-xs text-muted-foreground">
                       {m.leetcodeUsername || "—"} / {m.codeforcesHandle || "—"}{" "}
-                      / {m.atcoderHandle || "—"} / {m.csesUserId || "—"}
+                      / {m.atcoderHandle || "—"} /{" "}
+                      {m.csesLinked ? m.csesUsername || "CSES" : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {userScore(m)}

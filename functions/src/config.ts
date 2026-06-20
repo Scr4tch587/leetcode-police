@@ -34,3 +34,14 @@ export const TWILIO_FROM_NUMBER = defineString("TWILIO_FROM_NUMBER", {
   description: "Twilio phone number that sends SMS, in E.164 format.",
 });
 
+// ---- CSES credential encryption --------------------------------------------
+/**
+ * 256-bit master key (base64-encoded 32 bytes) used to AES-256-GCM encrypt the
+ * CSES passwords we store. Held only in Secret Manager and injected into the
+ * runtime of the functions that read/write credentials — never in Firestore,
+ * code, or the client. Generate + set with:
+ *   head -c 32 /dev/urandom | base64 | \
+ *     firebase functions:secrets:set CSES_ENC_KEY
+ */
+export const CSES_ENC_KEY = defineSecret("CSES_ENC_KEY");
+

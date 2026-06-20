@@ -4,7 +4,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "../lib/admin";
-import { REGION } from "../config";
+import { REGION, CSES_ENC_KEY } from "../config";
 import {
   Collections,
   DailyStatus,
@@ -20,7 +20,13 @@ import { scoreOf } from "../lib/userScore";
 import { FieldValue } from "firebase-admin/firestore";
 
 const opts = { region: REGION };
-const collectOpts = { ...opts, memory: "512MiB" as const, timeoutSeconds: 120 };
+// runSubmissionCheck collects, which decrypts stored CSES passwords.
+const collectOpts = {
+  ...opts,
+  memory: "512MiB" as const,
+  timeoutSeconds: 120,
+  secrets: [CSES_ENC_KEY],
+};
 
 function normalizeScoreLabel(raw: string): string {
   const label = raw.trim().slice(0, 120);

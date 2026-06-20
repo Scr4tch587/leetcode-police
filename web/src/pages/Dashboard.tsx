@@ -71,7 +71,7 @@ export function Dashboard() {
     Boolean(profile?.leetcodeUsername?.trim()) ||
     Boolean(profile?.codeforcesHandle?.trim()) ||
     Boolean(profile?.atcoderHandle?.trim()) ||
-    Boolean(profile?.csesUserId?.trim());
+    Boolean(profile?.csesLinked);
 
   const punishment = useMemo(
     () =>

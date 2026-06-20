@@ -15,8 +15,12 @@ export interface User {
   leetcodeUsername: string;
   codeforcesHandle: string;
   atcoderHandle: string;
-  /** Numeric CSES account id (the `<id>` in cses.fi/user/<id>). */
-  csesUserId: string;
+  /** @deprecated Legacy public CSES account id; superseded by login linking. */
+  csesUserId?: string;
+  /** CSES login username (public-ish handle; the password is stored encrypted). */
+  csesUsername?: string;
+  /** True once CSES credentials are linked (password lives in csesCredentials). */
+  csesLinked?: boolean;
   groupId: string | null;
   /** Penalty tally for the current cycle (legacy field: wordPenalty). */
   score: number;
@@ -71,11 +75,34 @@ export interface DailyStatus {
   adminGrantedToday?: boolean;
 }
 
+/**
+ * Encrypted CSES credentials + sync state. Stored in its own collection that is
+ * locked down to Functions only (clients can never read it). One doc per user,
+ * keyed by uid.
+ */
+export interface CsesCredential {
+  userId: string;
+  /** CSES login username. */
+  username: string;
+  /** AES-256-GCM ciphertext of the password (see lib/csesCrypto). */
+  encPassword: string;
+  /**
+   * Task ids already solved when CSES was first linked. These are NOT counted
+   * as solves — only tasks solved *after* linking are ingested.
+   */
+  baselineTaskIds: string[];
+  baselineAt: Timestamp;
+  updatedAt: Timestamp;
+  /** Last poll-time login/scrape error, for admin debugging. */
+  lastError?: string;
+}
+
 export const Collections = {
   users: "users",
   groups: "groups",
   submissions: "submissions",
   dailyStatus: "dailyStatus",
+  csesCredentials: "csesCredentials",
   meta: "meta",
 } as const;
 

@@ -48,7 +48,7 @@ export function platformHandle(
         | "leetcodeUsername"
         | "codeforcesHandle"
         | "atcoderHandle"
-        | "csesUserId"
+        | "csesUsername"
       >
     | undefined,
   platform: Platform
@@ -61,7 +61,7 @@ export function platformHandle(
     return user.atcoderHandle?.trim() || "—";
   }
   if (platform === "cses") {
-    return user.csesUserId?.trim() || "—";
+    return user.csesUsername?.trim() || "—";
   }
   return user.codeforcesHandle?.trim() || "—";
 }

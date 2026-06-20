@@ -65,8 +65,10 @@ service cloud.firestore {
       // state fields are immutable from the client (Functions bypass rules).
       allow update: if isSignedIn()
         && request.auth.uid == userId
+        // CSES fields (csesUsername, csesLinked) are set only by the
+        // setCsesCredentials Cloud Function, never directly by the client.
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle', 'atcoderHandle', 'csesUserId'])
+             .hasOnly(['displayName', 'phoneNumber', 'leetcodeUsername', 'codeforcesHandle', 'atcoderHandle'])
         // phone/displayName changes only; everything else must be unchanged.
         && request.resource.data.score == resource.data.score
         && request.resource.data.bankedProblems == resource.data.bankedProblems
@@ -98,6 +100,13 @@ service cloud.firestore {
     match /dailyStatus/{docId} {
       allow get, list: if isSignedIn() && sameGroup(resource.data.groupId);
       allow create, update, delete: if false;
+    }
+
+    // ---- csesCredentials ---------------------------------------------------
+    // Encrypted CSES passwords. NEVER readable or writable by any client; only
+    // Cloud Functions (which bypass these rules) touch this collection.
+    match /csesCredentials/{userId} {
+      allow read, write: if false;
     }
 
     // ---- everything else ---------------------------------------------------

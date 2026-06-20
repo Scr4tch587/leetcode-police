@@ -19,6 +19,8 @@ export {
   createGroup,
   joinGroup,
   leaveGroup,
+  setCsesCredentials,
+  clearCsesCredentials,
 } from "./handlers/account";
 
 // Admin adjustments (callable)

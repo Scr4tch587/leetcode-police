@@ -1,179 +1,169 @@
 /**
- * CSES (cses.fi) activity client.
+ * CSES (cses.fi) authenticated client.
  *
- * Unlike Codeforces and AtCoder, CSES exposes NO public accepted-submission
- * feed: the problemset/statistics pages require login, and the only public page
- * — the account page `https://cses.fi/user/<id>` — shows just the account's
- * total submission count and its *last submission* time. There is no public
- * per-problem solve list and no per-problem timestamps.
+ * CSES exposes NO public accepted-submission feed, so to track accurately we log
+ * in as the user (with their stored, encrypted credentials) and read the
+ * server-rendered problemset list, which marks each task with the logged-in
+ * user's score. A task whose score icon is "full" is solved/accepted.
  *
- * So CSES support is an ACTIVITY signal, not an accepted-submission feed: we
- * treat "this account submitted something newer than we last saw" as the day's
- * solve. Caveats vs Codeforces/AtCoder:
- *   - counts ANY submission, including wrong answers (CSES doesn't expose the
- *     verdict on the public page);
- *   - there is no real problem id/name — the collector synthesizes a
- *     one-per-game-day key from the submission time;
- *   - only the single latest submission is visible, so there is no history to
- *     backfill and no way to bank multiple "extra" solves in a day.
+ * Login flow:
+ *   1. GET  /login          -> sets a PHPSESSID cookie + a session-bound
+ *                              csrf_token hidden field.
+ *   2. POST /login          -> form fields csrf_token, nick (username), pass.
+ *      The session cookie becomes authenticated.
  *
- * Users are identified by their numeric CSES account id (the `<id>` in the
- * profile URL), since CSES has no public username -> id lookup.
+ * We identify accepted *tasks* (not individual submissions), so the collector
+ * attributes a newly-appearing solved task to the time we detect it. CSES does
+ * not give us a reliable per-task accept timestamp without scraping each task
+ * page, and a ~30-minute poll attributes the game day correctly anyway.
  */
 import * as logger from "firebase-functions/logger";
 
-const USER_PAGE = "https://cses.fi/user";
+const BASE = "https://cses.fi";
+const LOGIN_URL = `${BASE}/login`;
+const LIST_URL = `${BASE}/problemset/list/`;
 const MIN_INTERVAL_MS = 1100;
+const UA = "leetcode-police/1.0";
 
-/**
- * CSES renders the account page's timestamps in its server-local timezone
- * (the site is hosted in Finland). We only get a wall-clock string, so we parse
- * it against this zone. If CSES ever switches to UTC, flip this single constant.
- */
-const CSES_TIME_ZONE = "Europe/Helsinki";
-
-export interface CsesSubmission {
-  /** Placeholder instant key; the collector rewrites this to a per-day key. */
-  problemId: string;
-  problemName?: string;
-  timestamp: number;
-}
-
-export interface CsesActivity {
-  username?: string;
-  submissionCount: number;
-  /** Unix seconds of the account's most recent submission. */
-  timestamp: number;
+export interface CsesTask {
+  /** CSES task id, e.g. "1068". */
+  id: string;
+  /** Task name, e.g. "Weird Algorithm". */
+  name?: string;
 }
 
 let lastRequestAt = 0;
-
 async function rateLimit(): Promise<void> {
-  const now = Date.now();
-  const wait = MIN_INTERVAL_MS - (now - lastRequestAt);
+  const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   lastRequestAt = Date.now();
 }
 
-/** Milliseconds `timeZone` is ahead of UTC at the given instant. */
-function tzOffsetMs(epochMs: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(new Date(epochMs));
-  const m: Record<string, string> = {};
-  for (const p of parts) m[p.type] = p.value;
-  const asUTC = Date.UTC(
-    Number(m.year),
-    Number(m.month) - 1,
-    Number(m.day),
-    m.hour === "24" ? 0 : Number(m.hour),
-    Number(m.minute),
-    Number(m.second)
-  );
-  return asUTC - epochMs;
+/** Pull cookie name=value pairs out of a response's Set-Cookie headers. */
+function readCookies(res: Response): Record<string, string> {
+  const out: Record<string, string> = {};
+  // undici exposes getSetCookie(); fall back to the combined header.
+  const raw: string[] =
+    typeof (res.headers as { getSetCookie?: () => string[] }).getSetCookie ===
+    "function"
+      ? (res.headers as { getSetCookie: () => string[] }).getSetCookie()
+      : res.headers.get("set-cookie")
+        ? [res.headers.get("set-cookie") as string]
+        : [];
+  for (const line of raw) {
+    const m = line.match(/^\s*([^=]+)=([^;]*)/);
+    if (m) out[m[1].trim()] = m[2].trim();
+  }
+  return out;
 }
 
-/** Convert a CSES wall-clock "YYYY-MM-DD HH:MM:SS" (CSES_TIME_ZONE) to seconds. */
-function parseCsesTime(wall: string): number {
-  const m = wall.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
-  if (!m) return 0;
-  const [, y, mo, d, h, mi, s] = m;
-  const naiveUTC = Date.UTC(
-    Number(y),
-    Number(mo) - 1,
-    Number(d),
-    Number(h),
-    Number(mi),
-    Number(s)
-  );
-  const offset = tzOffsetMs(naiveUTC, CSES_TIME_ZONE);
-  return Math.floor((naiveUTC - offset) / 1000);
-}
-
-function isNumericId(userId: string): boolean {
-  return /^\d+$/.test(userId.trim());
+function cookieHeader(jar: Record<string, string>): string {
+  return Object.entries(jar)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("; ");
 }
 
 /**
- * Read the public account page and extract its latest-submission activity.
- * Returns null when the id is invalid, the page 404s, or the account has never
- * submitted (no "Last submission" row).
+ * Log in to CSES and return the authenticated cookie header string.
+ * Throws on bad credentials or unexpected responses.
  */
-export async function fetchActivity(
-  userId: string
-): Promise<CsesActivity | null> {
-  const id = userId.trim();
-  if (!isNumericId(id)) {
-    throw new Error(`CSES user id "${userId}" is not numeric`);
+export async function csesLogin(
+  username: string,
+  password: string
+): Promise<string> {
+  await rateLimit();
+  const formRes = await fetch(LOGIN_URL, { headers: { "User-Agent": UA } });
+  if (!formRes.ok) {
+    throw new Error(`CSES login page HTTP ${formRes.status}`);
   }
+  const jar = readCookies(formRes);
+  const formHtml = await formRes.text();
+  const csrf = formHtml.match(
+    /name="csrf_token"\s+value="([0-9a-f]+)"/
+  )?.[1];
+  if (!csrf) throw new Error("CSES login: csrf_token not found.");
+  if (!jar.PHPSESSID) throw new Error("CSES login: session cookie not set.");
+
+  const body = new URLSearchParams({
+    csrf_token: csrf,
+    nick: username,
+    pass: password,
+  }).toString();
 
   await rateLimit();
-  const res = await fetch(`${USER_PAGE}/${id}`, {
-    headers: { "User-Agent": "leetcode-police/1.0" },
+  const postRes = await fetch(LOGIN_URL, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      "User-Agent": UA,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: cookieHeader(jar),
+    },
+    body,
   });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`CSES HTTP ${res.status} for user ${id}`);
+  // Merge any rotated session cookie from the POST response.
+  Object.assign(jar, readCookies(postRes));
+
+  // A successful login redirects (3xx); a failed one re-renders the form (200).
+  if (postRes.status === 200) {
+    const html = await postRes.text();
+    if (!/\/logout/.test(html)) {
+      throw new Error("CSES login failed — check the username and password.");
+    }
   }
 
-  const html = await res.text();
-  const lastMatch = html.match(
-    /Last submission:<\/td>\s*<td[^>]*>\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/
-  );
-  if (!lastMatch) return null; // No submissions yet.
-
-  const countMatch = html.match(/Submission count:<\/td>\s*<td[^>]*>\s*(\d+)/);
-  const nameMatch = html.match(/<title>CSES - User ([^<]+)<\/title>/);
-
-  const timestamp = parseCsesTime(lastMatch[1]);
-  if (timestamp <= 0) return null;
-
-  return {
-    username: nameMatch?.[1]?.trim(),
-    submissionCount: countMatch ? Number(countMatch[1]) : 0,
-    timestamp,
-  };
+  // Confirm authentication on a real page (header shows a logout link).
+  await rateLimit();
+  const check = await fetch(LIST_URL, {
+    headers: { "User-Agent": UA, Cookie: cookieHeader(jar) },
+  });
+  const checkHtml = await check.text();
+  if (!/\/logout/.test(checkHtml)) {
+    throw new Error("CSES login failed — check the username and password.");
+  }
+  return cookieHeader(jar);
 }
 
 /**
- * Mirror of the other clients' `fetchAcceptedSubmissions` shape. Returns at most
- * one synthetic submission (the latest activity) when it is at/after
- * `sinceSeconds`, so the collector's existing per-platform loop can ingest it.
+ * Parse the problemset list HTML into the set of solved (full-score) tasks.
+ * Each task block looks like:
+ *   <li class="task"><a href="/problemset/task/1068">Weird Algorithm</a>
+ *     <span class="detail">.../...</span> <span class="task-score icon full">
  */
-export async function fetchRecentActivity(
-  userId: string,
-  sinceSeconds = 0
-): Promise<CsesSubmission[]> {
-  const activity = await fetchActivity(userId);
-  if (!activity || activity.timestamp < sinceSeconds) {
-    logger.debug("CSES activity fetched", { userId, found: 0 });
-    return [];
+export function parseSolvedTasks(html: string): CsesTask[] {
+  const tasks: CsesTask[] = [];
+  const statusSeen: Record<string, number> = {};
+  const blocks = html.split('<li class="task">');
+  for (let i = 1; i < blocks.length; i++) {
+    const chunk = blocks[i];
+    const link = chunk.match(/<a href="\/problemset\/task\/(\d+)">([^<]*)<\/a>/);
+    if (!link) continue;
+    const score = chunk.match(/<span class="task-score icon ([^"]*)">/);
+    const status = (score?.[1] ?? "").trim();
+    statusSeen[status || "(none)"] = (statusSeen[status || "(none)"] ?? 0) + 1;
+    if (status.split(/\s+/).includes("full")) {
+      tasks.push({ id: link[1], name: link[2].trim() || undefined });
+    }
   }
-  logger.debug("CSES activity fetched", {
-    userId,
-    timestamp: activity.timestamp,
-    submissionCount: activity.submissionCount,
-  });
-  return [
-    {
-      problemId: String(activity.timestamp),
-      problemName: "CSES activity",
-      timestamp: activity.timestamp,
-    },
-  ];
+  logger.debug("CSES task-score statuses parsed", statusSeen);
+  return tasks;
 }
 
-/** Most recent activity as a single synthetic submission (manual-check peek). */
-export async function fetchLatestActivity(
-  userId: string
-): Promise<CsesSubmission | null> {
-  const subs = await fetchRecentActivity(userId, 0);
-  return subs[0] ?? null;
+/** Log in and return the user's currently-solved tasks. */
+export async function fetchSolvedTasks(
+  username: string,
+  password: string
+): Promise<CsesTask[]> {
+  const cookie = await csesLogin(username, password);
+  await rateLimit();
+  const res = await fetch(LIST_URL, {
+    headers: { "User-Agent": UA, Cookie: cookie },
+  });
+  if (!res.ok) throw new Error(`CSES problemset HTTP ${res.status}`);
+  const tasks = parseSolvedTasks(await res.text());
+  logger.debug("CSES solved tasks fetched", {
+    username,
+    solved: tasks.length,
+  });
+  return tasks;
 }

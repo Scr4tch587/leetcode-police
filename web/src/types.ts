@@ -9,8 +9,12 @@ export interface User {
   leetcodeUsername: string;
   codeforcesHandle: string;
   atcoderHandle: string;
-  /** Numeric CSES account id (the `<id>` in cses.fi/user/<id>). */
-  csesUserId: string;
+  /** @deprecated Legacy CSES account id; superseded by login linking. */
+  csesUserId?: string;
+  /** CSES login username (the password is stored encrypted server-side). */
+  csesUsername?: string;
+  /** True once CSES credentials are linked. */
+  csesLinked?: boolean;
   groupId: string | null;
   score: number;
   /** @deprecated Legacy field — use score */

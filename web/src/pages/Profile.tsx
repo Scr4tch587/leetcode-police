@@ -24,10 +24,16 @@ export function Profile() {
   const [leetcodeUsername, setLeetcodeUsername] = useState("");
   const [codeforcesHandle, setCodeforcesHandle] = useState("");
   const [atcoderHandle, setAtcoderHandle] = useState("");
-  const [csesUserId, setCsesUserId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // CSES is linked separately (login + encrypted password), not via updateProfile.
+  const [csesUsername, setCsesUsername] = useState("");
+  const [csesPassword, setCsesPassword] = useState("");
+  const [csesBusy, setCsesBusy] = useState(false);
+  const [csesMsg, setCsesMsg] = useState<string | null>(null);
+  const [csesError, setCsesError] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
@@ -36,7 +42,6 @@ export function Profile() {
       setLeetcodeUsername(profile.leetcodeUsername ?? "");
       setCodeforcesHandle(profile.codeforcesHandle ?? "");
       setAtcoderHandle(profile.atcoderHandle ?? "");
-      setCsesUserId(profile.csesUserId ?? "");
     }
   }, [profile]);
 
@@ -48,10 +53,10 @@ export function Profile() {
       !leetcodeUsername.trim() &&
       !codeforcesHandle.trim() &&
       !atcoderHandle.trim() &&
-      !csesUserId.trim()
+      !profile?.csesLinked
     ) {
       setError(
-        "At least one LeetCode, Codeforces, AtCoder, or CSES handle is required."
+        "At least one LeetCode, Codeforces, AtCoder, or CSES account is required."
       );
       setBusy(false);
       return;
@@ -63,15 +68,53 @@ export function Profile() {
         leetcodeUsername,
         codeforcesHandle,
         atcoderHandle,
-        csesUserId,
       });
       setMsg(
-        "Saved. Handles were verified on LeetCode / Codeforces / AtCoder / CSES."
+        "Saved. Handles were verified on LeetCode / Codeforces / AtCoder."
       );
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const linkCses = async () => {
+    setCsesBusy(true);
+    setCsesError(null);
+    setCsesMsg(null);
+    try {
+      const res = await api.setCsesCredentials({
+        csesUsername: csesUsername.trim(),
+        password: csesPassword,
+      });
+      setCsesPassword("");
+      setCsesMsg(
+        res.isNew
+          ? `Linked. ${res.solvedCount} already-solved task(s) recorded as your starting point — only new solves count from here.`
+          : "CSES credentials updated."
+      );
+    } catch (e) {
+      setCsesError((e as Error).message);
+    } finally {
+      setCsesBusy(false);
+    }
+  };
+
+  const unlinkCses = async () => {
+    if (!confirm("Unlink CSES? Your stored password will be deleted.")) return;
+    setCsesBusy(true);
+    setCsesError(null);
+    setCsesMsg(null);
+    try {
+      await api.clearCsesCredentials({});
+      setCsesUsername("");
+      setCsesPassword("");
+      setCsesMsg("CSES unlinked.");
+    } catch (e) {
+      setCsesError((e as Error).message);
+    } finally {
+      setCsesBusy(false);
     }
   };
 
@@ -109,8 +152,8 @@ export function Profile() {
           <CardHeader>
             <CardTitle className="text-base">Your details</CardTitle>
             <CardDescription>
-              At least one platform handle is required. We check that it exists
-              publicly before saving.
+              At least one platform account is required. We check that handles
+              exist publicly before saving.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -149,21 +192,6 @@ export function Profile() {
                 placeholder="tourist"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="cses">CSES account id</Label>
-              <Input
-                id="cses"
-                value={csesUserId}
-                onChange={(e) => setCsesUserId(e.target.value)}
-                placeholder="12345"
-                inputMode="numeric"
-              />
-              <p className="text-xs text-muted-foreground">
-                Numeric id from your profile URL, cses.fi/user/&lt;id&gt;. Tracks
-                daily submission activity (CSES has no public solved-problem
-                feed).
-              </p>
-            </div>
             <Separator />
             <div className="space-y-2">
               <Label htmlFor="phone">Phone (optional)</Label>
@@ -182,6 +210,81 @@ export function Profile() {
             <Button disabled={busy} onClick={() => void save()}>
               Save & verify handles
             </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">CSES</CardTitle>
+            <CardDescription>
+              CSES has no public solved-problem feed, so we log in as you to read
+              your accepted tasks. Your password is encrypted (AES-256) and only
+              used by the sync job — it&apos;s never shown to your group or
+              returned to the browser.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {csesError && (
+              <Alert variant="destructive">
+                <AlertDescription>{csesError}</AlertDescription>
+              </Alert>
+            )}
+            {csesMsg && (
+              <Alert className="border-primary/30 bg-accent/50">
+                <AlertDescription>{csesMsg}</AlertDescription>
+              </Alert>
+            )}
+            {profile?.csesLinked ? (
+              <p className="text-sm">
+                Linked as{" "}
+                <span className="font-medium">
+                  {profile.csesUsername || "your CSES account"}
+                </span>
+                . Newly accepted tasks count from when you linked.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="cses-user">CSES username</Label>
+                  <Input
+                    id="cses-user"
+                    value={csesUsername}
+                    onChange={(e) => setCsesUsername(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cses-pass">CSES password</Label>
+                  <Input
+                    id="cses-pass"
+                    type="password"
+                    value={csesPassword}
+                    onChange={(e) => setCsesPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
+          <CardFooter>
+            {profile?.csesLinked ? (
+              <Button
+                variant="destructive"
+                disabled={csesBusy}
+                onClick={() => void unlinkCses()}
+              >
+                {csesBusy ? "Working…" : "Unlink CSES"}
+              </Button>
+            ) : (
+              <Button
+                disabled={
+                  csesBusy || !csesUsername.trim() || !csesPassword
+                }
+                onClick={() => void linkCses()}
+              >
+                {csesBusy ? "Linking…" : "Link CSES"}
+              </Button>
+            )}
           </CardFooter>
         </Card>
 
