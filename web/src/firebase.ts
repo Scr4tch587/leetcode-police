@@ -13,7 +13,7 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const region = import.meta.env.VITE_FUNCTIONS_REGION || "us-central1";
+const region = import.meta.env.VITE_FUNCTIONS_REGION || "northamerica-northeast2";
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

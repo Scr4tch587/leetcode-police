@@ -67,6 +67,7 @@ export async function ingestSubmission(
     problemId: event.problemId,
     timestamp: ts,
     uniqueKey: uk,
+    date,
     ...(event.problemName ? { problemName: event.problemName } : {}),
   };
 
@@ -143,25 +144,21 @@ export async function ingestSubmission(
   return true;
 }
 
-/** Count submission docs for a user on a local calendar day. */
+/**
+ * Count submission docs for a user on a game day. Aggregate query over the
+ * stored `date` field — bills 1 read regardless of how many docs match.
+ */
 export async function countSubmissionsForDay(
   userId: string,
-  date: string,
-  timeZone: string
+  date: string
 ): Promise<number> {
-  const snap = await db
+  const agg = await db
     .collection(Collections.submissions)
     .where("userId", "==", userId)
+    .where("date", "==", date)
+    .count()
     .get();
-
-  let count = 0;
-  for (const doc of snap.docs) {
-    const sub = doc.data() as Submission;
-    const ms = sub.timestamp.toMillis();
-    const subDate = localDateString(new Date(ms), timeZone);
-    if (subDate === date) count++;
-  }
-  return count;
+  return agg.data().count;
 }
 
 export async function updateLastProcessed(

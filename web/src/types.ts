@@ -45,6 +45,8 @@ export interface Submission {
   problemName?: string;
   timestamp: Timestamp | null;
   uniqueKey: string;
+  /** Game day (YYYY-MM-DD, group timezone, 4 AM cutoff). Optional pre-backfill. */
+  date?: string;
 }
 
 export interface DailyStatus {

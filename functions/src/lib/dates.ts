@@ -29,6 +29,15 @@ export function isGameDayCloseHour(timeZone: string, now = new Date()): boolean 
   return localParts(now, timeZone).hour === GAME_DAY_CUTOFF_HOUR;
 }
 
+/** Local wall-clock hour and minute in `timeZone`. */
+export function localTime(
+  timeZone: string,
+  now = new Date()
+): { hour: number; minute: number } {
+  const { hour, minute } = localParts(now, timeZone);
+  return { hour, minute };
+}
+
 /** Game day that just ended (only valid during the close hour). */
 export function gameDayJustClosed(
   timeZone: string,

@@ -4,7 +4,7 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
-import { REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
+import { SCHEDULE_REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
 import { Collections } from "./types";
 import { gameDayJustClosed, today } from "./lib/dates";
 import { broadcastSms } from "./lib/twilio";
@@ -21,7 +21,7 @@ import {
 } from "./lib/biweeklyPunishment";
 
 const scheduleOpts = {
-  region: REGION,
+  region: SCHEDULE_REGION,
   /** Cron is UTC; per-group timezone checked in code. */
   timeZone: "UTC",
   secrets: [TWILIO_AUTH_TOKEN],

@@ -19,8 +19,15 @@ import { decryptSecret } from "./csesCrypto";
 import { fetchRecentAccepted } from "../leetcodeScraper";
 import { liftVoidIfSubmissionsToday } from "./adminDailyStatus";
 import { reconcilePendingDays } from "./game";
-import { ingestSubmission, submissionExists, updateLastProcessed } from "./submissions";
-import { localDateString } from "./dates";
+import { loadIngestedKeys, recordIngestedKeys } from "./ingestLedger";
+import {
+  IncomingSubmission,
+  ingestSubmission,
+  submissionExists,
+  uniqueKey,
+  updateLastProcessed,
+} from "./submissions";
+import { isGameDayCloseHour, localDateString } from "./dates";
 
 export interface LatestSeen {
   platform: Platform;
@@ -60,6 +67,8 @@ function errMessage(err: unknown): string {
 export interface CollectOptions {
   /** Peek latest AC per platform; build debugMessage (manual admin checks only). */
   includeLatestSeen?: boolean;
+  /** Run the reconcile/lift-void passes even if nothing new was ingested. */
+  forceReconcile?: boolean;
 }
 
 async function getGroupTimezone(groupId: string): Promise<string> {
@@ -276,6 +285,20 @@ export async function collectForUser(
   let lastIngestError: string | undefined;
   let csesDebug: string | undefined;
 
+  // One read replaces a 2-read transaction per already-seen submission below.
+  const known = await loadIngestedKeys(user.id);
+  const newKeys: string[] = [];
+
+  const tryIngest = async (event: IncomingSubmission): Promise<boolean> => {
+    const uk = uniqueKey(event.platform, event.problemId);
+    if (known.has(uk)) return false;
+    const added = await ingestSubmission(user, event, tz);
+    // Record even when the doc already existed (ledger was just behind).
+    known.add(uk);
+    newKeys.push(uk);
+    return added;
+  };
+
   if (user.codeforcesHandle?.trim()) {
     try {
       const subs = await fetchAcceptedSubmissions(
@@ -284,16 +307,12 @@ export async function collectForUser(
       );
       for (const s of subs) {
         try {
-          const added = await ingestSubmission(
-            user,
-            {
-              platform: "codeforces",
-              problemId: s.problemId,
-              problemName: s.problemName,
-              timestampSeconds: s.timestamp,
-            },
-            tz
-          );
+          const added = await tryIngest({
+            platform: "codeforces",
+            problemId: s.problemId,
+            problemName: s.problemName,
+            timestampSeconds: s.timestamp,
+          });
           if (added) {
             ingested++;
             maxNewTs = Math.max(maxNewTs, s.timestamp);
@@ -318,26 +337,22 @@ export async function collectForUser(
     }
   }
 
-  // LeetCode: always scan recent AC list; dedupe via Firestore doc id only.
+  // LeetCode: scan recent AC list; dedupe via ledger + Firestore doc id.
   if (user.leetcodeUsername?.trim()) {
     try {
       const subs = await fetchRecentAccepted(
         user.leetcodeUsername.trim(),
         0,
-        50
+        15
       );
       for (const s of subs) {
         try {
-          const added = await ingestSubmission(
-            user,
-            {
-              platform: "leetcode",
-              problemId: s.problemId,
-              problemName: s.problemName,
-              timestampSeconds: s.timestamp,
-            },
-            tz
-          );
+          const added = await tryIngest({
+            platform: "leetcode",
+            problemId: s.problemId,
+            problemName: s.problemName,
+            timestampSeconds: s.timestamp,
+          });
           if (added) {
             ingested++;
             maxNewTs = Math.max(maxNewTs, s.timestamp);
@@ -375,16 +390,12 @@ export async function collectForUser(
       );
       for (const s of subs) {
         try {
-          const added = await ingestSubmission(
-            user,
-            {
-              platform: "atcoder",
-              problemId: s.problemId,
-              problemName: s.problemName,
-              timestampSeconds: s.timestamp,
-            },
-            tz
-          );
+          const added = await tryIngest({
+            platform: "atcoder",
+            problemId: s.problemId,
+            problemName: s.problemName,
+            timestampSeconds: s.timestamp,
+          });
           if (added) {
             ingested++;
             maxNewTs = Math.max(maxNewTs, s.timestamp);
@@ -429,16 +440,12 @@ export async function collectForUser(
         for (const t of solved) {
           if (baseline.has(t.id)) continue;
           try {
-            const added = await ingestSubmission(
-              user,
-              {
-                platform: "cses",
-                problemId: t.id,
-                problemName: t.name,
-                timestampSeconds: nowSeconds,
-              },
-              tz
-            );
+            const added = await tryIngest({
+              platform: "cses",
+              problemId: t.id,
+              problemName: t.name,
+              timestampSeconds: nowSeconds,
+            });
             if (added) {
               ingested++;
               newCount++;
@@ -473,19 +480,29 @@ export async function collectForUser(
     await updateLastProcessed(user.id, maxNewTs);
   }
 
-  await liftVoidIfSubmissionsToday(user, tz);
+  // Best-effort: a failed ledger write only means re-checking those keys next run.
+  await recordIngestedKeys(user.id, newKeys).catch((err) => {
+    logger.warn("Ingest ledger write failed", { userId: user.id, err });
+  });
 
-  // Backfill banking for historical days left unresolved (e.g. ingest after 4 AM cutoff).
-  const reconciled = await reconcilePendingDays(user, tz);
-  if (reconciled.length > 0) {
-    logger.info("Reconciled pending days after collect", {
-      userId: user.id,
-      days: reconciled.map((r) => ({
-        date: r.date,
-        count: r.submissionCount,
-        extrasBanked: r.extrasBanked,
-      })),
-    });
+  // The reconcile/lift-void passes read several docs per user, so don't run
+  // them on every idle poll — only when something changed, during the 4 AM
+  // close hour (backstop for the daily processor), or on manual admin checks.
+  if (ingested > 0 || options?.forceReconcile || isGameDayCloseHour(tz)) {
+    await liftVoidIfSubmissionsToday(user, tz);
+
+    // Backfill banking for historical days left unresolved (e.g. ingest after 4 AM cutoff).
+    const reconciled = await reconcilePendingDays(user, tz);
+    if (reconciled.length > 0) {
+      logger.info("Reconciled pending days after collect", {
+        userId: user.id,
+        days: reconciled.map((r) => ({
+          date: r.date,
+          count: r.submissionCount,
+          extrasBanked: r.extrasBanked,
+        })),
+      });
+    }
   }
 
   const latestSeenByPlatform = options?.includeLatestSeen

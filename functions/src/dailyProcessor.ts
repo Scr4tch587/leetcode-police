@@ -5,13 +5,13 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
-import { REGION, DEFAULT_TIMEZONE } from "./config";
+import { SCHEDULE_REGION, DEFAULT_TIMEZONE } from "./config";
 import { Collections, Group, User } from "./types";
 import { gameDayJustClosed } from "./lib/dates";
 import { resolveUserDay } from "./lib/game";
 
 const scheduleOpts = {
-  region: REGION,
+  region: SCHEDULE_REGION,
   /** Cron is UTC; per-group timezone checked in code. */
   timeZone: "UTC",
   memory: "256MiB" as const,
@@ -46,7 +46,7 @@ export const dailyProcessor = onSchedule(
         if (!date) {
           return { userId: u.id, status: "skipped" as const };
         }
-        return resolveUserDay(u, date, gtz);
+        return resolveUserDay(u, date);
       })
     );
 

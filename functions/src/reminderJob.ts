@@ -4,14 +4,14 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/admin";
-import { REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
+import { SCHEDULE_REGION, DEFAULT_TIMEZONE, TWILIO_AUTH_TOKEN } from "./config";
 import { effectiveSolvedToday } from "./lib/dailyStatus";
 import { Collections, DailyStatus, User, dailyStatusId } from "./types";
 import { today } from "./lib/dates";
 import { sendSms } from "./lib/twilio";
 
 const scheduleOpts = {
-  region: REGION,
+  region: SCHEDULE_REGION,
   timeZone: DEFAULT_TIMEZONE,
   secrets: [TWILIO_AUTH_TOKEN],
   memory: "256MiB" as const,

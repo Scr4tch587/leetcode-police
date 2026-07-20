@@ -54,6 +54,21 @@ export interface Submission {
   problemName?: string;
   timestamp: Timestamp;
   uniqueKey: string;
+  /** Game day (YYYY-MM-DD, group timezone, 4 AM cutoff) — enables count() queries. */
+  date: string;
+}
+
+/**
+ * Per-user cache of every uniqueKey already ingested, so the collector can
+ * skip known submissions with a single read instead of one transaction each.
+ * Advisory only — ingestSubmission's existence check stays authoritative, so
+ * a missing/stale ledger costs extra reads but never duplicates a submission.
+ */
+export interface IngestLedger {
+  userId: string;
+  /** All ingested uniqueKeys (platform_problemId), across platforms. */
+  keys: string[];
+  updatedAt: Timestamp;
 }
 
 export interface DailyStatus {
@@ -103,6 +118,7 @@ export const Collections = {
   submissions: "submissions",
   dailyStatus: "dailyStatus",
   csesCredentials: "csesCredentials",
+  ingestLedgers: "ingestLedgers",
   meta: "meta",
 } as const;
 

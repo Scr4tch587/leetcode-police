@@ -109,6 +109,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ---- ingestLedgers -----------------------------------------------------
+    // Collector-internal cache of ingested submission keys. Functions only.
+    match /ingestLedgers/{userId} {
+      allow read, write: if false;
+    }
+
     // ---- everything else ---------------------------------------------------
     match /{document=**} {
       allow read, write: if false;

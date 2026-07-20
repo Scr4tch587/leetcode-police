@@ -32,14 +32,13 @@ function extrasToBank(count: number, alreadyBanked: number): number {
  */
 export async function resolveUserDay(
   user: Pick<User, "id" | "groupId">,
-  date: string,
-  timeZone: string
+  date: string
 ): Promise<MidnightOutcome> {
   if (!user.groupId) {
     return { userId: user.id, date, status: "skipped" };
   }
 
-  let count = await countSubmissionsForDay(user.id, date, timeZone);
+  let count = await countSubmissionsForDay(user.id, date);
 
   return db.runTransaction(async (tx) => {
     const userRef = db.collection(Collections.users).doc(user.id);
@@ -139,7 +138,7 @@ export async function closeHistoricalDays(
     const ds = doc.data() as DailyStatus;
     if (ds.date >= yesterday) continue;
 
-    const count = await countSubmissionsForDay(user.id, ds.date, timeZone);
+    const count = await countSubmissionsForDay(user.id, ds.date);
     const dsRef = db
       .collection(Collections.dailyStatus)
       .doc(dailyStatusId(user.id, ds.date));
@@ -187,7 +186,7 @@ export async function reconcileTodayExtras(
   if (!user.groupId) return null;
 
   const date = today(timeZone);
-  const count = await countSubmissionsForDay(user.id, date, timeZone);
+  const count = await countSubmissionsForDay(user.id, date);
 
   return db.runTransaction(async (tx) => {
     const userRef = db.collection(Collections.users).doc(user.id);
@@ -253,8 +252,7 @@ export async function reconcileTodayExtras(
  */
 export async function reverseFalseClosure(
   user: Pick<User, "id" | "groupId">,
-  date: string,
-  timeZone: string
+  date: string
 ): Promise<MidnightOutcome | null> {
   if (!user.groupId) return null;
 
@@ -267,7 +265,7 @@ export async function reverseFalseClosure(
   if (!pre?.resolved) return null;
   if (!pre.bankUsed && !pre.penaltyApplied) return null;
 
-  const count = await countSubmissionsForDay(user.id, date, timeZone);
+  const count = await countSubmissionsForDay(user.id, date);
   if (count < 1) return null;
 
   return db.runTransaction(async (tx) => {
@@ -347,9 +345,9 @@ export async function reconcilePendingDays(
   const ds = (await dsRef.get()).data() as DailyStatus | undefined;
 
   if (ds && !ds.resolved) {
-    const count = await countSubmissionsForDay(user.id, yesterday, timeZone);
+    const count = await countSubmissionsForDay(user.id, yesterday);
     if (count > 0) {
-      const outcome = await resolveUserDay(user, yesterday, timeZone);
+      const outcome = await resolveUserDay(user, yesterday);
       outcomes.push({ ...outcome, status: "reconciled" });
       logger.info("Reconciled yesterday", {
         userId: user.id,
@@ -363,11 +361,7 @@ export async function reconcilePendingDays(
   // Late submissions (e.g. AtCoder API lag) can land after a day was already
   // closed as bankUsed/penalty. Refund those recent days now that subs exist.
   for (const offset of [1, 2, 3]) {
-    const reversed = await reverseFalseClosure(
-      user,
-      addDays(todayStr, -offset),
-      timeZone
-    );
+    const reversed = await reverseFalseClosure(user, addDays(todayStr, -offset));
     if (reversed) outcomes.push(reversed);
   }
 

@@ -7,8 +7,19 @@
  */
 import { defineString, defineSecret } from "firebase-functions/params";
 
-/** Default region for all functions. */
-export const REGION = "us-central1";
+/**
+ * Default region for all functions. Must match Firestore's region
+ * (northamerica-northeast2) — cross-region reads bill as network egress.
+ * Keep in sync with the web app's VITE_FUNCTIONS_REGION.
+ */
+export const REGION = "northamerica-northeast2";
+
+/**
+ * Region for scheduled functions only. Cloud Scheduler does not exist in
+ * northamerica-northeast2, so cron-triggered functions run from Montreal;
+ * their post-optimization Firestore traffic is small enough not to matter.
+ */
+export const SCHEDULE_REGION = "northamerica-northeast1";
 
 /**
  * Default group timezone, used for scheduled jobs and for computing the local

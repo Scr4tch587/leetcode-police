@@ -21,7 +21,7 @@ export async function liftVoidIfSubmissionsToday(
   const prev = snap.data() as DailyStatus | undefined;
   if (!prev?.adminVoidToday) return false;
 
-  const count = await countSubmissionsForDay(user.id, date, timeZone);
+  const count = await countSubmissionsForDay(user.id, date);
   if (count < 1) return false;
 
   await dsRef.set(
